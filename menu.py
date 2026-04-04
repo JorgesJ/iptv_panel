@@ -606,6 +606,36 @@ async def escanear_telegram():
 
     print(f"\n  Total: {len(todas)} URLs unicas")
 
+    # ── Comparar con TXTs anteriores — solo procesar URLs nuevas ─────────────
+    txts_anteriores = sorted([
+        f for f in os.listdir('.')
+        if f.startswith('global_') and f.endswith('.txt')
+    ])
+    urls_conocidas = set()
+    if txts_anteriores:
+        for txt in txts_anteriores:
+            try:
+                with open(txt, 'r', encoding='utf-8') as f:
+                    for linea in f:
+                        u = linea.strip()
+                        if u:
+                            urls_conocidas.add(u)
+            except Exception:
+                pass
+        nuevas = [d for d in todas if d['url_m3u'] not in urls_conocidas]
+        ya_conocidas = len(todas) - len(nuevas)
+        print(f"  📂 TXTs anteriores encontrados: {len(txts_anteriores)}")
+        print(f"  🔄 URLs ya conocidas (se saltan): {ya_conocidas}")
+        print(f"  ✨ URLs nuevas a verificar: {len(nuevas)}")
+        if not nuevas:
+            print("\n  ℹ️  No hay URLs nuevas respecto a escaneos anteriores.")
+            input("\n  Pulsa Enter para continuar...")
+            return
+        todas = nuevas
+    else:
+        print("  ℹ️  No hay TXTs anteriores — procesando todas las URLs")
+    # ─────────────────────────────────────────────────────────────────────────
+
     # Ping básico
     print("  Comprobando disponibilidad...")
     sem = asyncio.Semaphore(20)
