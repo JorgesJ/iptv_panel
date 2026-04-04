@@ -15,9 +15,6 @@ import random
 import unicodedata
 import zipfile
 from datetime import datetime
-from dotenv import load_dotenv
-
-load_dotenv()
 
 # ─── Archivos ─────────────────────────────────────────────────────────────────
 URLS_TELEGRAM_FILE  = "urls_escaneadas.json"
@@ -45,18 +42,18 @@ HEADERS_VLC = {
     "Icy-MetaData": "1",
 }
 
-# Telegram — credenciales desde .env
-API_ID   = int(os.getenv("TELEGRAM_API_ID", "0"))
-API_HASH = os.getenv("TELEGRAM_API_HASH", "")
-CANAL    = os.getenv("TELEGRAM_CANAL", "")
-TOPIC_ID = int(os.getenv("TELEGRAM_TOPIC_ID", "0"))
+# Telegram
+API_ID   = 35243792
+API_HASH = "dc0b7e27f983bad3804dbf4f9129fd97"
+CANAL    = "https://t.me/+74VUSgkwXh5mMzg0"
+TOPIC_ID = 40617
 
 MPEG_TS_SYNC = b'\x47'
 HLS_HEADER   = b'#EXTM3U'
 MAC_PATTERN  = re.compile(r'/([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}/')
 
-# Token GitHub — leído desde .env
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
+# Token GitHub — rellena aquí para no tenerlo que escribir cada vez
+GITHUB_TOKEN = "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"
 
 # ─── Utilidades ───────────────────────────────────────────────────────────────
 
@@ -81,7 +78,57 @@ def normalizar(texto):
 
 def tiene_espana(nombre):
     n = normalizar(nombre)
-    return n.startswith('ES:') or n.startswith('ES ') or 'ESPANA' in n
+
+    # Prefijos de país españoles
+    if n.startswith('ES:') or n.startswith('ES ') or n.startswith('ES|'):
+        return True
+    if n.startswith('(ES)') or n.startswith('[ES]'):
+        return True
+    if 'ESPANA' in n or 'SPAIN' in n:
+        return True
+
+    # Quitar calificadores de calidad al inicio: (FHD), (HD), (SD), (FHD REPUESTO), etc.
+    n_limpio = re.sub(r'^\([^)]*\)\s*', '', n).strip()
+
+    # Canales Movistar+ (M+ y M.)
+    if n_limpio.startswith('M+') or n_limpio.startswith('M.') or n_limpio.startswith('M '):
+        return True
+
+    # DAZN (exclusivo de España en esta región)
+    if n_limpio.startswith('DAZN'):
+        return True
+
+    # Canales españoles conocidos sin prefijo
+    CANALES_ES = {
+        'LA 1', 'LA 2', 'LA SEXTA', 'ANTENA 3', 'ANTENA3', 'CUATRO', 'TELECINCO',
+        'TELEMADRID', 'CANAL SUR', 'TV3', 'TV3 CAT', 'CANAL 33', 'ESPORT 3',
+        'ESPORT3', 'A PUNT', 'ARAGON TV', 'ETB 1', 'ETB 2', 'ETB1', 'ETB2',
+        'TVG', 'TVG 2', 'IB3', 'CMM', 'TVE INTERNACIONAL', 'CLAN TVE', 'CLAN',
+        '24 HORAS', '24H', '24HORAS', 'TELEDEPORTE',
+        'ENERGY', 'NEOX', 'FDF', 'NOVA', 'MEGA', 'ATRESERIES', 'DIVINITY',
+        'DKISS', 'DMAX', 'TEN', 'TRECE', 'BOING', 'DISNEY CHANNEL', 'DISNEY JUNIOR',
+        'NICK JR', 'NICKELODEON', 'BABY TV', 'DREAMWORKS',
+        'GOL', 'GOL PLAY', 'LALIGA TV', 'LALIGA TV HYPERMOTION',
+        'EUROSPORT 1', 'EUROSPORT 2', 'REAL MADRID TV', 'BARCA TV',
+        'ACB', 'TDTV',
+        'TCM', 'AXN', 'AXN MOVIES', 'AMC', 'SYFY', 'WARNER TV', 'CALLE 13',
+        'COSMO', 'ODISEA', 'HISTORIA', 'DISCOVERY', 'NATIONAL GEOGRAPHIC',
+        'NAT GEO', 'BBC EARTH', 'HOLLYWOOD', 'PARAMOUNT CHANNEL',
+        'CANAL COCINA', 'CANAL DECASA', 'DKISS', 'MTV', 'MEZZO', 'MEZZO LIVE',
+        'STAR CHANNEL', 'DARK', 'SOMOS', 'FACTORIA DE FICCION', 'XTRM',
+        'BE MAD', 'BEMAD', 'SUNDANCE', 'COMEDY CENTRAL',
+        'CANAL SUR ANDALUCIA', 'CANAL EXTREMADURA', 'CASTILLA LA MANCHA',
+        'ARAGON TV INT', 'TELEMADRID INT', 'TV CANARIA',
+        'CAZA Y PESCA', 'CAZAVISION', 'IBERALIA TV', 'EL TORO TV',
+        'BETIS TV', 'RALLY TV', 'GARAGE TV', 'TORO TV', 'ONETORO',
+        'EURONEWS', 'CNN', 'MAX PPV', 'PLUS+', 'ENFAMILIA',
+    }
+
+    for canal in CANALES_ES:
+        if n_limpio == canal or n_limpio.startswith(canal + ' ') or n_limpio.startswith(canal + '_'):
+            return True
+
+    return False
 
 def parsear_m3u(texto, filtro_espana=True):
     lineas = texto.splitlines()
