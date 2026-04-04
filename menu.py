@@ -15,6 +15,9 @@ import random
 import unicodedata
 import zipfile
 from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ─── Archivos ─────────────────────────────────────────────────────────────────
 URLS_TELEGRAM_FILE  = "urls_escaneadas.json"
@@ -42,18 +45,18 @@ HEADERS_VLC = {
     "Icy-MetaData": "1",
 }
 
-# Telegram
-API_ID   = 35243792
-API_HASH = "dc0b7e27f983bad3804dbf4f9129fd97"
-CANAL    = "https://t.me/+74VUSgkwXh5mMzg0"
-TOPIC_ID = 40617
+# Telegram — credenciales desde .env
+API_ID   = int(os.getenv("TELEGRAM_API_ID", "0"))
+API_HASH = os.getenv("TELEGRAM_API_HASH", "")
+CANAL    = os.getenv("TELEGRAM_CANAL", "")
+TOPIC_ID = int(os.getenv("TELEGRAM_TOPIC_ID", "0"))
 
 MPEG_TS_SYNC = b'\x47'
 HLS_HEADER   = b'#EXTM3U'
 MAC_PATTERN  = re.compile(r'/([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}/')
 
-# Token GitHub — rellena aquí para no tenerlo que escribir cada vez
-GITHUB_TOKEN = "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"
+# Token GitHub — leído desde .env
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 
 # ─── Utilidades ───────────────────────────────────────────────────────────────
 
