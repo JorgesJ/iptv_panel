@@ -14,7 +14,16 @@ import time
 import random
 import unicodedata
 import zipfile
+import logging
 from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# ─── Suprimir errores gaierror/DNS de aiohttp en consola ─────────────────────
+logging.getLogger('asyncio').setLevel(logging.CRITICAL)
+logging.getLogger('aiohttp').setLevel(logging.CRITICAL)
+logging.disable(logging.WARNING)
 
 # ─── Archivos ─────────────────────────────────────────────────────────────────
 URLS_TELEGRAM_FILE  = "urls_escaneadas.json"
@@ -42,18 +51,18 @@ HEADERS_VLC = {
     "Icy-MetaData": "1",
 }
 
-# Telegram
-API_ID   = 35243792
-API_HASH = "dc0b7e27f983bad3804dbf4f9129fd97"
-CANAL    = "https://t.me/+74VUSgkwXh5mMzg0"
-TOPIC_ID = 40617
+# Telegram — credenciales desde .env
+API_ID   = int(os.getenv("TELEGRAM_API_ID", "0"))
+API_HASH = os.getenv("TELEGRAM_API_HASH", "")
+CANAL    = os.getenv("TELEGRAM_CANAL", "")
+TOPIC_ID = int(os.getenv("TELEGRAM_TOPIC_ID", "0"))
 
 MPEG_TS_SYNC = b'\x47'
 HLS_HEADER   = b'#EXTM3U'
 MAC_PATTERN  = re.compile(r'/([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}/')
 
-# Token GitHub — rellena aquí para no tenerlo que escribir cada vez
-GITHUB_TOKEN = "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"
+# Token GitHub — leído desde .env
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 
 # ─── Utilidades ───────────────────────────────────────────────────────────────
 
@@ -698,6 +707,22 @@ async def escanear_telegram():
             f.write(d['url'] + '\n')
     print(f"  TXT guardado: {ruta_txt}")
 
+    # ── Log de escaneo ────────────────────────────────────────────────────────
+    nombre_log = f"scan_log_{datetime.now().strftime('%Y%m%d_%H%M')}.txt"
+    ruta_log = os.path.join(os.path.dirname(os.path.abspath(__file__)), nombre_log)
+    with open(ruta_log, 'w', encoding='utf-8') as flog:
+        flog.write(f"=== LOG DE ESCANEO TELEGRAM ===\n")
+        flog.write(f"Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        flog.write(f"Canales escaneados: {[c['nombre'] for c in canales_sel]}\n")
+        flog.write(f"Total URLs únicas encontradas: {len(todas)}\n")
+        flog.write(f"URLs que responden ping: {len(disponibles)}\n")
+        flog.write(f"URLs descartadas (sin respuesta): {len(todas) - len(disponibles)}\n")
+        flog.write(f"\n--- URLs que responden ping ---\n")
+        for d in disponibles:
+            flog.write(f"  OK | {d['url']}\n")
+    print(f"  📋 Log guardado: {ruta_log}")
+    # ─────────────────────────────────────────────────────────────────────────
+
     min_c, min_p, min_conn, acumular = pedir_opciones(filtro_espana=True)
     await escanear_y_verificar(disponibles, min_c, min_p, acumular, filtro_espana=True, min_conn=min_conn)
 
@@ -959,7 +984,7 @@ async def buscar_github():
         for pagina in range(1, paginas + 1):
             try:
                 params = {
-                    'q': 'type=m3u_plus OR type=m3u get.php username password',
+                    'q': 'iptv get.php username password type=m3u',
                     'sort': 'updated',
                     'order': 'desc',
                     'per_page': 30,
@@ -971,9 +996,12 @@ async def buscar_github():
                     timeout=aiohttp.ClientTimeout(total=15)
                 ) as r:
                     if r.status == 403:
-                        print("\n  ⚠️  Límite de API alcanzado. Usa un token GitHub.")
+                        data_err = await r.json()
+                        print(f"\n  ⚠️  Rate limit o acceso denegado: {data_err.get('message','403')}")
                         break
                     if r.status != 200:
+                        data_err = await r.text()
+                        print(f"\n  ⚠️  Error HTTP {r.status}: {data_err[:100]}")
                         break
                     data = await r.json()
                     repos = data.get('items', [])
@@ -1005,12 +1033,10 @@ async def buscar_github():
         # ── Búsqueda 2: Código con URLs directas ─────────────────────────────
         print("\n  🔍 Buscando código con URLs M3U directas...")
         queries = [
-            'get.php?username type=m3u_plus extension:txt',
-            'get.php?username type=m3u_plus extension:m3u',
-            'get.php?username type=m3u extension:txt',
-            'get.php?username type=m3u extension:m3u',
-            'http iptv .ts extension:txt',
-            'http iptv .ts extension:m3u',
+            'get.php username password type=m3u_plus',
+            'get.php username password type=m3u',
+            'iptv get.php type=m3u_plus username',
+            'xtream codes get.php type=m3u',
         ]
         for query in queries:
             try:
