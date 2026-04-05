@@ -31,6 +31,7 @@ URLS_TXT_FILE       = "urls_txt.json"
 URLS_VERIFICADAS    = "urls_verificadas.json"
 LISTAS_FILE         = "listas.json"
 M3U_FOLDER          = "listas_m3u"
+SCAN_HISTORY_FOLDER = "scan_history"
 
 # ─── Configuración ────────────────────────────────────────────────────────────
 TIMEOUT_LISTA       = 12
@@ -616,15 +617,16 @@ async def escanear_telegram():
     print(f"\n  Total: {len(todas)} URLs unicas")
 
     # ── Comparar con TXTs anteriores — solo procesar URLs nuevas ─────────────
+    scan_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), SCAN_HISTORY_FOLDER)
     txts_anteriores = sorted([
-        f for f in os.listdir('.')
+        f for f in os.listdir(scan_dir)
         if f.startswith('global_') and f.endswith('.txt')
-    ])
+    ]) if os.path.exists(scan_dir) else []
     urls_conocidas = set()
     if txts_anteriores:
         for txt in txts_anteriores:
             try:
-                with open(txt, 'r', encoding='utf-8') as f:
+                with open(os.path.join(scan_dir, txt), 'r', encoding='utf-8') as f:
                     for linea in f:
                         u = linea.strip()
                         if u:
@@ -700,8 +702,10 @@ async def escanear_telegram():
     else:
         nombre_canal = canales_sel[0]['nombre'].replace(' ', '_').replace('(', '').replace(')', '').replace('/', '_')
 
-    nombre_txt = f"{nombre_canal}_{datetime.now().strftime('%Y%m%d_%H%M')}.txt"
-    ruta_txt = os.path.join(os.path.dirname(os.path.abspath(__file__)), nombre_txt)
+    scan_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), SCAN_HISTORY_FOLDER)
+    os.makedirs(scan_dir, exist_ok=True)
+    nombre_txt = f"global_{nombre_canal}_{datetime.now().strftime('%Y%m%d_%H%M')}.txt"
+    ruta_txt = os.path.join(scan_dir, nombre_txt)
     with open(ruta_txt, 'w', encoding='utf-8') as f:
         for d in disponibles:
             f.write(d['url'] + '\n')
@@ -709,7 +713,7 @@ async def escanear_telegram():
 
     # ── Log de escaneo ────────────────────────────────────────────────────────
     nombre_log = f"scan_log_{datetime.now().strftime('%Y%m%d_%H%M')}.txt"
-    ruta_log = os.path.join(os.path.dirname(os.path.abspath(__file__)), nombre_log)
+    ruta_log = os.path.join(scan_dir, nombre_log)
     with open(ruta_log, 'w', encoding='utf-8') as flog:
         flog.write(f"=== LOG DE ESCANEO TELEGRAM ===\n")
         flog.write(f"Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
