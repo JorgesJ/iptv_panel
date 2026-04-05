@@ -14,6 +14,7 @@ interface Canal {
 }
 
 const SORT_BTNS: { field: SortField; label: string }[] = [
+  { field: 'fecha', label: 'Recientes' },
   { field: 'caducidad', label: 'Caducidad' },
   { field: 'max_conn', label: 'MaxConn' },
   { field: 'ping', label: 'Velocidad' },
@@ -30,8 +31,8 @@ export function SavedLists() {
   const [eliminandoTodas, setEliminandoTodas] = useState(false);
   const [ordenandoTodasMovistar, setOrdenandoTodasMovistar] = useState(false);
   const [mensajeGlobal, setMensajeGlobal] = useState('');
-  const [sortField, setSortField] = useState<SortField>('caducidad');
-  const [sortAsc, setSortAsc] = useState(true);
+  const [sortField, setSortField] = useState<SortField>('fecha');
+  const [sortAsc, setSortAsc] = useState(false);
 
   // Ver/editar canales
   const [viendoCanales, setViendoCanales] = useState<string | null>(null);
@@ -327,6 +328,15 @@ export function SavedLists() {
       case 'total_canales': return lista.total_canales;
       default: return '';
     }
+  };
+
+
+  // Helper: lista añadida en las últimas 24h
+  const esNueva = (fecha: string) => {
+    try {
+      const dt = new Date(fecha);
+      return (Date.now() - dt.getTime()) < 24 * 60 * 60 * 1000;
+    } catch { return false; }
   };
 
   const listasSorted = [...listas].sort((a, b) => {

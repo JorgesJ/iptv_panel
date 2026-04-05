@@ -16,7 +16,7 @@ interface Progreso {
   verificando: number;
 }
 
-type SortField = 'caducidad' | 'max_conn' | 'ping' | 'encontrados' | 'pct_ok';
+type SortField = 'caducidad' | 'max_conn' | 'ping' | 'encontrados' | 'pct_ok' | 'fecha_verificacion';
 
 // Variables globales fuera del componente - persisten entre renders
 let resultadosPersistidos: { con: BusquedaResultado[]; sin: string[]; filtro: string } | null = null;
@@ -44,8 +44,8 @@ export function ScannedUrls({ onSaveComplete }: Props) {
   const [importando, setImportando] = useState(false);
   const [importResult, setImportResult] = useState('');
   const [importandoJson, setImportandoJson] = useState(false);
-  const [sortField, setSortField] = useState<SortField>('caducidad');
-  const [sortAsc, setSortAsc] = useState(true);
+  const [sortField, setSortField] = useState<SortField>('fecha_verificacion');
+  const [sortAsc, setSortAsc] = useState(false);
   const [minCanales, setMinCanales] = useState(20);
   const [limpiandoJson, setLimpiandoJson] = useState(false);
 
@@ -439,12 +439,13 @@ export function ScannedUrls({ onSaveComplete }: Props) {
 
   const getSortValue = (r: BusquedaResultado) => {
     switch (sortField) {
+      case 'fecha_verificacion': return (r.entrada as any).fecha_verificacion || (r.entrada as any).fecha_scan || '';
       case 'caducidad': { const c = r.entrada.caducidad; return (!c || c === 'Unlimited') ? 'zzzz' : c; }
       case 'max_conn': return r.entrada.max_conn;
       case 'ping': return r.entrada.ping;
       case 'encontrados': return r.encontrados;
       case 'pct_ok': return (r as any).pct_ok ?? 0;
-      default: return 0;
+      default: return '';
     }
   };
 
@@ -628,7 +629,7 @@ export function ScannedUrls({ onSaveComplete }: Props) {
                         {guardandoTodas ? 'Guardando...' : `Guardar todas (${resultadosOrdenados.length})`}
                       </button>
                       <span className="text-slate-500 text-xs">Ordenar:</span>
-                      {([['caducidad', 'Caducidad'], ['max_conn', 'MaxConn'], ['ping', 'Velocidad'], ['pct_ok', 'Stream %'], ['encontrados', 'Canales']] as [SortField, string][]).map(([field, label]) => (
+                      {([['fecha_verificacion', 'Recientes'], ['caducidad', 'Caducidad'], ['max_conn', 'MaxConn'], ['ping', 'Velocidad'], ['pct_ok', 'Stream %'], ['encontrados', 'Canales']] as [SortField, string][]).map(([field, label]) => (
                         <button key={field} onClick={() => handleSort(field)}
                           className={`px-2.5 py-1 rounded-lg text-xs transition-all ${sortField === field ? 'bg-blue-600 text-white' : 'bg-white/5 text-slate-400 hover:text-white'}`}>
                           {label} {sortField === field ? (sortAsc ? '↑' : '↓') : ''}
