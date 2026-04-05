@@ -423,7 +423,7 @@ export function SavedLists() {
       ) : (
         <div className="space-y-3">
           {listasSorted.map((lista) => (
-            <div key={lista.nombre} className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden hover:border-white/20 transition-all">
+            <div key={lista.nombre} className={`rounded-2xl overflow-hidden transition-all border ${esNueva(lista.fecha) ? 'bg-green-500/10 border-green-500/30 hover:border-green-500/50' : 'bg-white/5 border-white/10 hover:border-white/20'}`}>
               <div className="p-5">
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex-1 min-w-0">

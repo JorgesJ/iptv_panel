@@ -460,6 +460,16 @@ export function ScannedUrls({ onSaveComplete }: Props) {
         })
     : [];
 
+
+  // Helper: URL verificada en las últimas 24h
+  const esNuevaUrl = (entrada: any) => {
+    try {
+      const fecha = entrada.fecha_verificacion || entrada.fecha_scan || '';
+      if (!fecha) return false;
+      return (Date.now() - new Date(fecha).getTime()) < 24 * 60 * 60 * 1000;
+    } catch { return false; }
+  };
+
   if (loading) return (
     <div className="flex items-center justify-center py-24 gap-3 text-slate-500">
       <Loader2 className="size-5 animate-spin" /> Cargando URLs...
@@ -642,7 +652,7 @@ export function ScannedUrls({ onSaveComplete }: Props) {
                     const nombre = limpiarNombre(resultado.entrada.portal, resultado.url);
                     const pctOk = (resultado as any).pct_ok;
                     return (
-                      <div key={resultado.url} className="border rounded-2xl p-5 transition-all bg-white/5 border-white/10 hover:border-white/20">
+                      <div key={resultado.url} className={`border rounded-2xl p-5 transition-all ${esNuevaUrl(resultado.entrada) ? 'bg-green-500/10 border-green-500/30 hover:border-green-500/50' : 'bg-white/5 border-white/10 hover:border-white/20'}`}>
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex-1 min-w-0">
                             <p className="text-white font-semibold">{nombre}</p>
