@@ -199,6 +199,8 @@ export function SavedLists() {
   const [seleccionados, setSeleccionados] = useState<Set<number>>(new Set());
   const [eliminandoSeleccion, setEliminandoSeleccion] = useState(false);
   const [filtrando, setFiltrando] = useState(false);
+  const [conexiones, setConexiones] = useState<Record<string, {activas: number, max: number, status: string} | null>>({});
+  const [cargandoConexiones, setCargandoConexiones] = useState<string | null>(null);
 
   const handleEliminarCanal = async (nombre: string, idxVisible: number) => {
     // Calcular el índice real en canales[] a partir del índice visible en canalesMostrados[]
@@ -282,6 +284,20 @@ export function SavedLists() {
       setError('Error al filtrar canales españoles');
     } finally {
       setFiltrando(false);
+    }
+  };
+
+  const handleVerConexiones = async (nombre: string) => {
+    setCargandoConexiones(nombre);
+    try {
+      const res = await fetch(`http://localhost:8000/listas/${encodeURIComponent(nombre)}/conexiones`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Error');
+      setConexiones(prev => ({ ...prev, [nombre]: data }));
+    } catch (e: any) {
+      setConexiones(prev => ({ ...prev, [nombre]: null }));
+    } finally {
+      setCargandoConexiones(null);
     }
   };
 
@@ -433,6 +449,23 @@ export function SavedLists() {
                     {lista.url && <p className="text-slate-600 text-xs mt-0.5 truncate max-w-sm">{lista.url}</p>}
                   </div>
                   <div className="flex gap-1.5 ml-3 shrink-0 flex-wrap justify-end">
+                    {lista.url && lista.url.includes('get.php') && (
+                      <button onClick={() => handleVerConexiones(lista.nombre)}
+                        disabled={cargandoConexiones === lista.nombre}
+                        title="Ver conexiones activas"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all text-slate-400 hover:text-yellow-400 hover:bg-yellow-400/10">
+                        {cargandoConexiones === lista.nombre
+                          ? <Loader2 className="size-3.5 animate-spin" />
+                          : conexiones[lista.nombre] !== undefined
+                            ? conexiones[lista.nombre] === null
+                              ? <span className="text-red-400">⚠️ Error</span>
+                              : <span className={conexiones[lista.nombre]!.activas > 0 ? 'text-orange-400' : 'text-green-400'}>
+                                  🔌 {conexiones[lista.nombre]!.activas}/{conexiones[lista.nombre]!.max}
+                                </span>
+                            : <span>🔌 Conexiones</span>
+                        }
+                      </button>
+                    )}
                     <button onClick={() => handleVerCanales(lista.nombre)}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${viendoCanales === lista.nombre ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-purple-400 hover:bg-purple-400/10'}`}>
                       <Eye className="size-3.5" />

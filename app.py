@@ -1409,6 +1409,49 @@ async def ordenar_movistar_todas():
     return JSONResponse({"ok": True, "exitos": exitos, "errores": errores})
 
 
+
+
+@app.get("/listas/{nombre:path}/conexiones")
+async def get_conexiones_activas(nombre: str):
+    """Consulta player_api.php para obtener conexiones activas y máximas en tiempo real"""
+    from urllib.parse import unquote
+    nombre = unquote(nombre)
+    listas = cargar_listas()
+    lista = next((l for l in listas if l["nombre"] == nombre), None)
+    if not lista:
+        raise HTTPException(404, "Lista no encontrada")
+    
+    url = lista.get("url", "")
+    m = re.match(r'(https?://[^/]+)/get\.php\?username=([^&]+)&password=([^&]+)', url, re.IGNORECASE)
+    if not m:
+        raise HTTPException(400, "URL no es una cuenta Xtream válida")
+    
+    base, username, password = m.group(1), m.group(2), m.group(3)
+    api_url = f"{base}/player_api.php?username={username}&password={password}"
+    
+    try:
+        connector = aiohttp.TCPConnector(ssl=False)
+        async with aiohttp.ClientSession(connector=connector) as session:
+            async with session.get(
+                api_url,
+                headers={"User-Agent": "VLC/3.0.20 LibVLC/3.0.20"},
+                timeout=aiohttp.ClientTimeout(total=8)
+            ) as r:
+                if r.status not in (200, 206):
+                    raise HTTPException(400, f"Servidor no responde: {r.status}")
+                data = await r.json(content_type=None)
+                info = data.get("user_info", {})
+                return JSONResponse({
+                    "activas": int(info.get("active_cons", 0)),
+                    "max": int(info.get("max_connections", 0)),
+                    "status": info.get("status", ""),
+                    "expira": info.get("exp_date", ""),
+                })
+    except aiohttp.ClientError as e:
+        raise HTTPException(400, f"Error de conexión: {str(e)[:80]}")
+    except Exception as e:
+        raise HTTPException(400, f"Error: {str(e)[:80]}")
+
 @app.post("/canales/probar-velocidad")
 async def probar_velocidad(urls: list = Form(...)):
     """Prueba la velocidad de respuesta de una lista de URLs de stream"""
