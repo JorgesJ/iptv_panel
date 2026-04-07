@@ -65,6 +65,12 @@ MAC_PATTERN  = re.compile(r'/([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}/')
 # Token GitHub — leído desde .env
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 
+# Foro LinuxSat — credenciales desde .env
+FORO_USER = os.getenv("FORO_LINUXSAT_USER", "")
+FORO_PASS = os.getenv("FORO_LINUXSAT_PASS", "")
+FORO_URL  = "https://www.linuxsat-support.com"
+FORO_BOARD = "/board/590-iptv-streaming/"
+
 # ─── Utilidades ───────────────────────────────────────────────────────────────
 
 def limpiar_pantalla():
@@ -1160,6 +1166,218 @@ async def buscar_github():
     input("\n  Pulsa Enter para continuar...")
 
 
+
+# ─── Opción 6: Escanear foro LinuxSat ────────────────────────────────────────
+
+async def escanear_foro():
+    import requests as req
+    from bs4 import BeautifulSoup
+    import zipfile as zf
+    import io
+
+    if not FORO_USER or not FORO_PASS:
+        print("  ❌ Credenciales del foro no configuradas en .env")
+        print("  Añade FORO_LINUXSAT_USER y FORO_LINUXSAT_PASS al .env")
+        input("\n  Pulsa Enter para continuar...")
+        return
+
+    print("\n  🌐 Escaneando foro LinuxSat-Support...")
+    print(f"  👤 Usuario: {FORO_USER}")
+
+    url_pattern = re.compile(
+        r'https?://[^\s'"<>]*get\.php\?[^\s'"<>]*type=m3u[^\s'"<>]*',
+        re.IGNORECASE
+    )
+
+    session = req.Session()
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    })
+
+    # ── Login ─────────────────────────────────────────────────────────────────
+    print("  🔐 Iniciando sesión...")
+    try:
+        # Obtener token CSRF
+        r = session.get(f"{FORO_URL}/index.php?login/", timeout=15)
+        soup = BeautifulSoup(r.text, "html.parser")
+        token_input = soup.find("input", {"name": "t"})
+        token = token_input["value"] if token_input else ""
+
+        login_data = {
+            "loginUsername": FORO_USER,
+            "loginPassword": FORO_PASS,
+            "useCookies":    "1",
+            "t":             token,
+        }
+        r = session.post(
+            f"{FORO_URL}/index.php?login/",
+            data=login_data,
+            timeout=15,
+            allow_redirects=True
+        )
+        if FORO_USER.lower() not in r.text.lower() and "logout" not in r.text.lower():
+            print("  ❌ Login fallido — verifica usuario y contraseña en .env")
+            input("\n  Pulsa Enter para continuar...")
+            return
+        print("  ✅ Login correcto")
+    except Exception as e:
+        print(f"  ❌ Error al conectar con el foro: {e}")
+        input("\n  Pulsa Enter para continuar...")
+        return
+
+    # ── Listar hilos del board IPTV ───────────────────────────────────────────
+    todas = []
+    vistas = set()
+    pagina = 1
+    max_paginas = 10  # Máximo 10 páginas para no saturar
+
+    print(f"  📋 Leyendo hilos de la sección IPTV...")
+
+    while pagina <= max_paginas:
+        try:
+            url_board = f"{FORO_URL}{FORO_BOARD}?pageNo={pagina}"
+            r = session.get(url_board, timeout=15)
+            soup = BeautifulSoup(r.text, "html.parser")
+
+            # Buscar links a hilos
+            links_hilos = []
+            for a in soup.find_all("a", href=True):
+                href = a["href"]
+                if "/thread/" in href and href not in links_hilos:
+                    if not href.startswith("http"):
+                        href = FORO_URL + href
+                    links_hilos.append(href)
+
+            if not links_hilos:
+                break
+
+            print(f"  📄 Página {pagina}: {len(links_hilos)} hilos encontrados")
+
+            for url_hilo in links_hilos[:30]:  # Máx 30 hilos por página
+                try:
+                    r_hilo = session.get(url_hilo, timeout=15)
+                    soup_hilo = BeautifulSoup(r_hilo.text, "html.parser")
+
+                    # Extraer URLs del texto
+                    texto_hilo = r_hilo.text
+                    for match in url_pattern.finditer(texto_hilo):
+                        url = match.group(0).rstrip('&,;\'"')
+                        url_base = re.sub(r'&output=[^\s&]+', '', url)
+                        if url_base not in vistas:
+                            vistas.add(url_base)
+                            todas.append({'url_m3u': url_base, 'portal': '', 'caducidad': '', 'max_conn': 1, 'observaciones': 'LinuxSat'})
+
+                    # Buscar adjuntos
+                    for a in soup_hilo.find_all("a", href=True):
+                        href = a["href"]
+                        if not href.startswith("http"):
+                            href = FORO_URL + href
+                        # Adjuntos típicos de WoltLab
+                        if any(x in href for x in ["/attachment/", "?download=", "filebase"]):
+                            ext = href.split("?")[0].lower()
+                            if any(ext.endswith(e) for e in [".txt", ".m3u", ".m3u8", ".zip"]) or "/attachment/" in href:
+                                try:
+                                    r_adj = session.get(href, timeout=15)
+                                    contenido = r_adj.content
+                                    # Si es zip, descomprimir
+                                    if href.endswith(".zip") or r_adj.headers.get("content-type","").startswith("application/zip"):
+                                        try:
+                                            with zf.ZipFile(io.BytesIO(contenido)) as z:
+                                                for nombre_zip in z.namelist():
+                                                    texto_zip = z.read(nombre_zip).decode("utf-8", errors="ignore")
+                                                    for match in url_pattern.finditer(texto_zip):
+                                                        url = match.group(0).rstrip('&,;\'"')
+                                                        url_base = re.sub(r'&output=[^\s&]+', '', url)
+                                                        if url_base not in vistas:
+                                                            vistas.add(url_base)
+                                                            todas.append({'url_m3u': url_base, 'portal': '', 'caducidad': '', 'max_conn': 1, 'observaciones': 'LinuxSat-adjunto'})
+                                        except Exception:
+                                            pass
+                                    else:
+                                        texto_adj = contenido.decode("utf-8", errors="ignore")
+                                        for match in url_pattern.finditer(texto_adj):
+                                            url = match.group(0).rstrip('&,;\'"')
+                                            url_base = re.sub(r'&output=[^\s&]+', '', url)
+                                            if url_base not in vistas:
+                                                vistas.add(url_base)
+                                                todas.append({'url_m3u': url_base, 'portal': '', 'caducidad': '', 'max_conn': 1, 'observaciones': 'LinuxSat-adjunto'})
+                                except Exception:
+                                    pass
+                except Exception:
+                    continue
+
+            pagina += 1
+            await asyncio.sleep(1)  # Respetar el servidor
+
+        except Exception as e:
+            print(f"  ❌ Error en página {pagina}: {e}")
+            break
+
+    if not todas:
+        print("\n  ❌ No se encontraron URLs M3U en el foro.")
+        input("\n  Pulsa Enter para continuar...")
+        return
+
+    # Deduplicar
+    unicas = list({d['url_m3u']: d for d in todas}.values())
+    print(f"\n  📋 {len(unicas)} URLs únicas encontradas en LinuxSat")
+
+    # Ping básico
+    print("  ⚡ Comprobando disponibilidad básica...")
+    sem = asyncio.Semaphore(20)
+    connector = aiohttp.TCPConnector(ssl=False)
+    completadas_ping = 0
+    ok_ping = 0
+    total_ping = len(unicas)
+
+    async def ping_foro(session_aio, datos, sem):
+        nonlocal completadas_ping, ok_ping
+        async with sem:
+            url = datos['url_m3u']
+            t0 = time.time()
+            resultado = None
+            try:
+                async with session_aio.head(url, timeout=aiohttp.ClientTimeout(total=5), allow_redirects=True) as r:
+                    ping = round((time.time() - t0) * 1000)
+                    if r.status in (200, 206) and ping <= MAX_PING:
+                        info = await obtener_info_cuenta(session_aio, url)
+                        resultado = {
+                            **datos,
+                            'url': url,
+                            'ping': ping,
+                            'portal': info.get('portal', ''),
+                            'caducidad': info.get('caducidad', ''),
+                            'max_conn': info.get('max_conn', 1),
+                            'observaciones': info.get('observaciones', 'LinuxSat'),
+                        }
+            except Exception:
+                pass
+            completadas_ping += 1
+            if resultado:
+                ok_ping += 1
+            pct = round(completadas_ping / total_ping * 100)
+            barra = '█' * (pct // 5) + '░' * (20 - pct // 5)
+            fallos = completadas_ping - ok_ping
+            print(f"\r  [{barra}] {pct}% | ✅ {ok_ping} OK | ❌ {fallos} desc. | {completadas_ping}/{total_ping}", end='', flush=True)
+            return resultado
+
+    async with aiohttp.ClientSession(connector=connector) as session_aio:
+        tareas = [ping_foro(session_aio, d, sem) for d in unicas]
+        resultados = await asyncio.gather(*tareas)
+
+    disponibles = [r for r in resultados if r]
+    print(f"\n  ✅ {len(disponibles)} URLs responden (ping OK)")
+
+    if not disponibles:
+        print("  ❌ Ninguna URL respondió al ping.")
+        input("\n  Pulsa Enter para continuar...")
+        return
+
+    # Verificar streams
+    min_c, min_p, min_conn, acumular = pedir_opciones(filtro_espana=True)
+    await escanear_y_verificar(disponibles, min_c, min_p, acumular, filtro_espana=True, min_conn=min_conn)
+    input("\n  Pulsa Enter para continuar...")
+
 # ─── Menú principal ───────────────────────────────────────────────────────────
 
 def mostrar_menu():
@@ -1178,6 +1396,8 @@ def mostrar_menu():
     print("   [3] Ver resumen de URLs verificadas")
     print("   [4] Limpiar URLs verificadas")
     print("   [5] Buscar en GitHub")
+    print("   [6] Escanear foro LinuxSat")
+    print("   [T] Todas las fuentes (Telegram + GitHub + Foro)")
     print()
     print("   [0] Salir")
     print()
@@ -1202,6 +1422,13 @@ async def main():
             limpiar_verificadas()
         elif opcion == '5':
             await buscar_github()
+        elif opcion == '6':
+            await escanear_foro()
+        elif opcion.upper() == 'T':
+            print("\n  🔄 Escaneando todas las fuentes...")
+            await escanear_telegram()
+            await buscar_github()
+            await escanear_foro()
         elif opcion == '0':
             print("\n  Hasta luego!")
             break
