@@ -413,10 +413,14 @@ async def verificar_lista(session, entrada, sem_listas, sem_streams, min_canales
         if pct < min_pct:
             return None
 
-        # Filtro MaxConn — solo descarta si sabemos que es menor al mínimo
+        # Filtro MaxConn — descarta si max_conn conocido es menor al mínimo
+        # Si max_conn=0 (desconocido) y min_conn>1, también descarta para ser estricto
         max_conn = entrada.get('max_conn', 0)  # 0 = desconocido
-        if min_conn > 1 and max_conn > 0 and max_conn < min_conn:
-            return None
+        if min_conn > 1:
+            if max_conn == 0:
+                return None  # Desconocido — descartar si se pide filtro estricto
+            if max_conn < min_conn:
+                return None  # Menor del mínimo requerido
 
         t0 = time.time()
         try:
