@@ -1204,6 +1204,43 @@ async def buscar_github():
 
 
 
+
+def extraer_canales_espana_m3u(contenido_bytes, nombre_origen):
+    """Extrae canales españoles de un M3U y guarda el archivo filtrado."""
+    FILTROS_ES = ['┃ES┃', 'ES|', '|ES ', 'ESPAÑA', 'ESPANA', 'SPAIN',
+                  'M+', 'MOVISTAR', 'DAZN', 'LALIGA', 'LIGA', 'RFEF',
+                  'VAMOS', 'TELECINCO', 'ANTENA 3', 'LA 1', 'LA 2',
+                  'CUATRO', 'LA SEXTA', 'EUROSPORT']
+    try:
+        texto = contenido_bytes.decode('utf-8-sig', errors='ignore')
+        lineas = texto.splitlines()
+        canales_es = []
+        i = 0
+        while i < len(lineas):
+            linea = lineas[i].strip()
+            if linea.startswith('#EXTINF'):
+                nombre = linea.split(',', 1)[-1].strip() if ',' in linea else ''
+                url = lineas[i+1].strip() if i+1 < len(lineas) else ''
+                n = nombre.upper()
+                if any(x in n for x in FILTROS_ES):
+                    if url and not url.startswith('#') and 'play/live' in url:
+                        canales_es.append((linea, url))
+            i += 1
+        if canales_es:
+            scan_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), SCAN_HISTORY_FOLDER)
+            os.makedirs(scan_dir, exist_ok=True)
+            fecha = datetime.now().strftime('%Y%m%d_%H%M%S')
+            nombre_limpio = re.sub(r'[^a-zA-Z0-9_]', '_', nombre_origen)[:30]
+            ruta_m3u = os.path.join(scan_dir, f"stalker_{nombre_limpio}_{fecha}.m3u")
+            with open(ruta_m3u, 'w', encoding='utf-8') as f:
+                f.write('#EXTM3U\n')
+                for extinf, url in canales_es:
+                    f.write(extinf + '\n' + url + '\n')
+            print(f"\n  💾 M3U Stalker guardado: {os.path.basename(ruta_m3u)} ({len(canales_es)} canales ES)")
+        return len(canales_es)
+    except Exception:
+        return 0
+
 # ─── Opción 6: Escanear foro LinuxSat ────────────────────────────────────────
 
 async def escanear_foro():
@@ -1375,12 +1412,19 @@ async def escanear_foro():
                                             pass
                                     else:
                                         texto_adj = contenido.decode("utf-8", errors="ignore")
-                                        for match in url_pattern.finditer(texto_adj):
-                                            url = match.group(0).rstrip('&,;\'"')
-                                            url_base = re.sub(r'&output=[^\s&]+', '', url)
-                                            if url_base not in vistas:
-                                                vistas.add(url_base)
-                                                todas.append({'url_m3u': url_base, 'portal': '', 'caducidad': '', 'max_conn': 1, 'observaciones': 'LinuxSat-adjunto'})
+                                        # Si es M3U con streams Stalker (play/live.php) — filtrar canales ES
+                                        if '#extm3u' in texto_adj.lower() and 'play/live' in texto_adj.lower():
+                                            nombre_adj = a.get_text(strip=True) or 'foro_stalker'
+                                            n_es = extraer_canales_espana_m3u(contenido, nombre_adj)
+                                            if n_es > 0:
+                                                print(f"\n  🇪🇸 M3U Stalker: {n_es} canales ES guardados", flush=True)
+                                        else:
+                                            for match in url_pattern.finditer(texto_adj):
+                                                url = match.group(0).rstrip('&,;\'"')
+                                                url_base = re.sub(r'&output=[^\s&]+', '', url)
+                                                if url_base not in vistas:
+                                                    vistas.add(url_base)
+                                                    todas.append({'url_m3u': url_base, 'portal': '', 'caducidad': '', 'max_conn': 1, 'observaciones': 'LinuxSat-adjunto'})
                                 except Exception:
                                     pass
                 except Exception:
