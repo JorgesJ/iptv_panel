@@ -751,95 +751,128 @@ async def escanear_telegram():
 
 async def importar_txt():
     print("\n  📄 Importar archivo TXT")
-    
+
     # Buscar TXT en el directorio actual
-    txts = [f for f in os.listdir('.') if f.endswith('.txt')]
+    txts = [f for f in sorted(os.listdir('.')) if f.endswith('.txt')]
+    rutas_seleccionadas = []
+
     if txts:
         print("\n  Archivos TXT encontrados en esta carpeta:")
         for i, f in enumerate(txts):
             print(f"    [{i+1}] {f}")
         print(f"    [0] Escribir ruta manualmente")
         print(f"    [X] Volver")
+        print("\n  💡 Puedes seleccionar varios: ej. 1,3,5 o 1-4")
         try:
-            opcion = input("\n  Elige archivo: ").strip()
+            opcion = input("\n  Elige archivo(s): ").strip()
             if opcion.upper() == 'X':
                 return
-            opcion = int(opcion or 0)
-            if 1 <= opcion <= len(txts):
-                ruta = txts[opcion-1]
-            else:
+            if opcion == '0':
                 ruta = input("  Ruta del archivo TXT: ").strip().strip('"')
-        except (ValueError, KeyboardInterrupt):
-            ruta = input("  Ruta del archivo TXT: ").strip().strip('"')
+                rutas_seleccionadas = [ruta]
+            else:
+                # Parsear selección múltiple: "1,3,5" o "1-4" o "2"
+                indices = set()
+                for parte in opcion.split(','):
+                    parte = parte.strip()
+                    if '-' in parte:
+                        try:
+                            inicio, fin = parte.split('-')
+                            for n in range(int(inicio), int(fin)+1):
+                                if 1 <= n <= len(txts):
+                                    indices.add(n)
+                        except ValueError:
+                            pass
+                    else:
+                        try:
+                            n = int(parte)
+                            if 1 <= n <= len(txts):
+                                indices.add(n)
+                        except ValueError:
+                            pass
+                rutas_seleccionadas = [txts[i-1] for i in sorted(indices)]
+                if not rutas_seleccionadas:
+                    print("  ❌ Selección no válida")
+                    input("\n  Pulsa Enter para continuar...")
+                    return
+        except KeyboardInterrupt:
+            return
     else:
         ruta = input("  Ruta del archivo TXT: ").strip().strip('"')
+        rutas_seleccionadas = [ruta]
 
-    if not os.path.exists(ruta):
-        print(f"  ❌ Archivo no encontrado: {ruta}")
-        input("\n  Pulsa Enter para continuar...")
-        return
+    print(f"\n  📂 Procesando {len(rutas_seleccionadas)} archivo(s)...")
 
-    # Leer con detección automática de encoding
-    raw = open(ruta, 'rb').read()
-    # Detectar BOM
-    if raw.startswith(b'\xff\xfe'):
-        texto = raw.decode('utf-16-le', errors='ignore')
-    elif raw.startswith(b'\xfe\xff'):
-        texto = raw.decode('utf-16-be', errors='ignore')
-    elif raw.startswith(b'\xef\xbb\xbf'):
-        texto = raw.decode('utf-8-sig', errors='ignore')
-    else:
-        texto = raw.decode('utf-8', errors='ignore')
-
-    # Parsear — detectar formato automáticamente
+    # Procesar todos los archivos seleccionados acumulando URLs
     todas = []
     vistas = set()
-    lineas = texto.splitlines()
 
-    # Detectar si es formato de bloques Telegram (tiene separadores 👤 o 〓〓〓)
-    es_formato_bloques = bool(re.search(r'👤|〓{3,}', texto))
+    for ruta in rutas_seleccionadas:
+        if not os.path.exists(ruta):
+            print(f"  ❌ Archivo no encontrado: {ruta}")
+            continue
 
-    if es_formato_bloques:
-        bloques = re.split(r'(?=👤|〓{3,})', texto)
-        for bloque in bloques:
-            if 'get.php' not in bloque.lower() and 'type=m3u' not in bloque.lower():
-                continue
-            datos = parsear_bloque_telegram(bloque)
-            if not datos.get('url_m3u') or datos['url_m3u'] in vistas:
-                continue
-            vistas.add(datos['url_m3u'])
-            todas.append(datos)
-    else:
-        # Formato de URLs directas (una por línea)
-        print("  ℹ️  Formato de URLs directas detectado, procesando línea a línea...")
-        url_pattern = re.compile(
-            r'https?://[^\s]*get\.php\?[^\s]*type=m3u[^\s]*',
-            re.IGNORECASE
-        )
-        for linea in lineas:
-            linea = linea.strip()
-            match = url_pattern.search(linea)
-            if not match:
-                continue
-            url = match.group(0).rstrip('&')
-            url_base = re.sub(r'&output=[^\s&]+', '', url)
-            if url_base in vistas:
-                continue
-            vistas.add(url_base)
-            todas.append({
-                'url_m3u': url_base,
-                'portal': '',
-                'caducidad': '',
-                'max_conn': 1,
-                'observaciones': '',
-            })
+        print(f"  📄 Leyendo: {ruta}")
+
+        # Leer con detección automática de encoding
+        raw = open(ruta, 'rb').read()
+        # Detectar BOM
+        if raw.startswith(b'\xff\xfe'):
+            texto = raw.decode('utf-16-le', errors='ignore')
+        elif raw.startswith(b'\xfe\xff'):
+            texto = raw.decode('utf-16-be', errors='ignore')
+        elif raw.startswith(b'\xef\xbb\xbf'):
+            texto = raw.decode('utf-8-sig', errors='ignore')
+        else:
+            texto = raw.decode('utf-8', errors='ignore')
+
+        lineas = texto.splitlines()
+
+        # Detectar si es formato de bloques Telegram (tiene separadores 👤 o 〓〓〓)
+        es_formato_bloques = bool(re.search(r'👤|〓{3,}', texto))
+
+        if es_formato_bloques:
+            bloques = re.split(r'(?=👤|〓{3,})', texto)
+            for bloque in bloques:
+                if 'get.php' not in bloque.lower() and 'type=m3u' not in bloque.lower():
+                    continue
+                datos = parsear_bloque_telegram(bloque)
+                if not datos.get('url_m3u') or datos['url_m3u'] in vistas:
+                    continue
+                vistas.add(datos['url_m3u'])
+                todas.append(datos)
+        else:
+            # Formato de URLs directas (una por línea)
+            url_pattern = re.compile(
+                r'https?://[^\s]*get\.php\?[^\s]*type=m3u[^\s]*',
+                re.IGNORECASE
+            )
+            for linea in lineas:
+                linea = linea.strip()
+                match = url_pattern.search(linea)
+                if not match:
+                    continue
+                url = match.group(0).rstrip('&')
+                url_base = re.sub(r'&output=[^\s&]+', '', url)
+                if url_base in vistas:
+                    continue
+                vistas.add(url_base)
+                todas.append({
+                    'url_m3u': url_base,
+                    'portal': '',
+                    'caducidad': '',
+                    'max_conn': 1,
+                    'observaciones': '',
+                })
+        urls_este_archivo = sum(1 for d in todas if True)
+        print(f"  ✅ {ruta}: URLs acumuladas hasta ahora: {len(todas)}")
 
     if not todas:
-        print("  ❌ No se encontraron URLs M3U en el archivo")
+        print("  ❌ No se encontraron URLs M3U en ningún archivo")
         input("\n  Pulsa Enter para continuar...")
         return
 
-    print(f"  📋 {len(todas)} URLs encontradas en el TXT")
+    print(f"  📋 {len(todas)} URLs únicas encontradas en total")
 
     # Comprobar ping básico
     print("  ⚡ Comprobando disponibilidad básica...")
