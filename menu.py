@@ -420,11 +420,15 @@ async def verificar_lista(session, entrada, sem_listas, sem_streams, min_canales
             return None
 
         # Filtro MaxConn — descarta si max_conn conocido es menor al mínimo
-        # Si max_conn=0 (desconocido) y min_conn>1, también descarta para ser estricto
         max_conn = entrada.get('max_conn', 0)  # 0 = desconocido
         if min_conn > 1:
+            # Si max_conn no está confirmado (0 o 1 por defecto), re-consultar API
+            if max_conn <= 1:
+                info = await obtener_info_cuenta(session, url)
+                max_conn = info.get('max_conn', 0)
+                entrada['max_conn'] = max_conn
             if max_conn == 0:
-                return None  # Desconocido — descartar si se pide filtro estricto
+                return None  # Desconocido tras consulta — descartar
             if max_conn < min_conn:
                 return None  # Menor del mínimo requerido
 
@@ -1185,7 +1189,7 @@ async def escanear_foro():
     print(f"  👤 Usuario: {FORO_USER}")
 
     url_pattern = re.compile(
-        r'https?://[^\s'"<>]*get\.php\?[^\s'"<>]*type=m3u[^\s'"<>]*',
+        r"https?://[^\s'\"<>]*get\.php\?[^\s'\"<>]*type=m3u[^\s'\"<>]*",
         re.IGNORECASE
     )
 
@@ -1197,25 +1201,66 @@ async def escanear_foro():
     # ── Login ─────────────────────────────────────────────────────────────────
     print("  🔐 Iniciando sesión...")
     try:
-        # Obtener token CSRF
-        r = session.get(f"{FORO_URL}/index.php?login/", timeout=15)
+        # Paso 1: obtener página de login y token CSRF dinámico
+        r = session.get(f"{FORO_URL}/cms/login/", timeout=15)
         soup = BeautifulSoup(r.text, "html.parser")
-        token_input = soup.find("input", {"name": "t"})
-        token = token_input["value"] if token_input else ""
 
+        # WoltLab genera el token CSRF en el JS de la página, buscar en el HTML
+        token = ""
+        # Buscar en scripts inline: SECURITY_TOKEN = "..." o securityToken: "..."
+        import re as _re
+        for patron in [
+            r'"securityToken"\s*:\s*"([a-f0-9\-+/=]{20,})"',
+            r'SECURITY_TOKEN\s*=\s*"([a-f0-9\-+/=]{20,})"',
+            r'"security_token"\s*:\s*"([a-f0-9\-+/=]{20,})"',
+            r'name="t"\s+value="([a-f0-9\-+/=]{20,})"',
+            r'value="([a-f0-9]{40,}-[A-Za-z0-9+/=]{10,})"',
+        ]:
+            m = _re.search(patron, r.text)
+            if m:
+                token = m.group(1)
+                print(f"  🔑 Token CSRF encontrado ({len(token)} chars)")
+                break
+
+        if not token:
+            # Intentar obtener token via ajax-proxy (WoltLab lo expone aquí)
+            try:
+                r_ajax = session.get(
+                    f"{FORO_URL}/index.php?ajax-proxy/",
+                    timeout=10
+                )
+                m = _re.search(r'"securityToken"\s*:\s*"([^"]+)"', r_ajax.text)
+                if m:
+                    token = m.group(1)
+                    print(f"  🔑 Token CSRF via ajax ({len(token)} chars)")
+            except Exception:
+                pass
+
+        # Campos exactos del formulario POST de WoltLab Suite (capturados con DevTools)
         login_data = {
-            "loginUsername": FORO_USER,
-            "loginPassword": FORO_PASS,
-            "useCookies":    "1",
-            "t":             token,
+            "username": FORO_USER,
+            "password": FORO_PASS,
+            "url":      f"{FORO_URL}/",
         }
+        if token:
+            login_data["t"] = token
+
         r = session.post(
-            f"{FORO_URL}/index.php?login/",
+            f"{FORO_URL}/cms/login/",
             data=login_data,
             timeout=15,
             allow_redirects=True
         )
-        if FORO_USER.lower() not in r.text.lower() and "logout" not in r.text.lower():
+
+        # Verificar login — comprobar en la página principal
+        r_check = session.get(f"{FORO_URL}/", timeout=15)
+        logueado = (
+            FORO_USER.lower() in r_check.text.lower() or
+            "logout" in r_check.text.lower() or
+            "log-out" in r_check.text.lower()
+        )
+
+        if not logueado:
             print("  ❌ Login fallido — verifica usuario y contraseña en .env")
             input("\n  Pulsa Enter para continuar...")
             return
@@ -1251,9 +1296,11 @@ async def escanear_foro():
             if not links_hilos:
                 break
 
-            print(f"  📄 Página {pagina}: {len(links_hilos)} hilos encontrados")
+            total_hilos_pag = len(links_hilos[:30])
+            print(f"  📄 Página {pagina}: {len(links_hilos)} hilos | URLs encontradas hasta ahora: {len(todas)}")
 
-            for url_hilo in links_hilos[:30]:  # Máx 30 hilos por página
+            for idx_hilo, url_hilo in enumerate(links_hilos[:30], 1):  # Máx 30 hilos por página
+                print(f"\r  ⏳ Pág {pagina}/{max_paginas} — Hilo {idx_hilo}/{total_hilos_pag} — {len(todas)} URLs encontradas", end='', flush=True)
                 try:
                     r_hilo = session.get(url_hilo, timeout=15)
                     soup_hilo = BeautifulSoup(r_hilo.text, "html.parser")
@@ -1437,4 +1484,15 @@ async def main():
             time.sleep(1)
 
 if __name__ == "__main__":
+    # Evitar que Windows suspenda el proceso durante escaneos largos
+    import ctypes
+    try:
+        ES_CONTINUOUS       = 0x80000000
+        ES_SYSTEM_REQUIRED  = 0x00000001
+        ES_DISPLAY_REQUIRED = 0x00000002
+        ctypes.windll.kernel32.SetThreadExecutionState(
+            ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
+        )
+    except Exception:
+        pass  # No es Windows o no tiene permisos
     asyncio.run(main())
