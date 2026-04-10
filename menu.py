@@ -39,7 +39,7 @@ TIMEOUT_STREAM      = 10
 MAX_PAR_LISTAS      = 8
 MAX_PAR_STREAMS     = 20  # Reducido para no saturar servidores
 MIN_PCT_STREAMS     = 75
-MIN_CANALES         = 20
+MIN_CANALES         = 10
 BYTES_A_LEER        = 32768  # 32KB — suficiente para verificar patrón MPEG-TS real
 MAX_PING            = 1000
 
@@ -1496,6 +1496,16 @@ async def escanear_foro():
         print("  ❌ Ninguna URL respondió al ping.")
         input("\n  Pulsa Enter para continuar...")
         return
+
+    # Guardar TXT con URLs que pasan el ping antes de verificar
+    scan_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), SCAN_HISTORY_FOLDER)
+    os.makedirs(scan_dir, exist_ok=True)
+    nombre_ping_txt = f"foro_ping_{datetime.now().strftime('%Y%m%d_%H%M')}.txt"
+    ruta_ping_txt = os.path.join(scan_dir, nombre_ping_txt)
+    with open(ruta_ping_txt, 'w', encoding='utf-8') as f:
+        for d in disponibles:
+            f.write(d['url'] + '\n')
+    print(f"  💾 TXT con {len(disponibles)} URLs guardado: {ruta_ping_txt}")
 
     # Verificar streams
     min_c, min_p, min_conn, acumular = pedir_opciones(filtro_espana=True)
