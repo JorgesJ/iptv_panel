@@ -190,7 +190,12 @@ export function ScannedUrls({ onSaveComplete }: Props) {
 
   const handleBuscar = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!filtro.trim()) return;
+
+    // Si no hay filtro y la fuente es verificadas → cargar directamente sin escanear
+    if (!filtro.trim() && fuente === 'verificadas') {
+      await handleCargarJsonGuardado();
+      return;
+    }
 
     // Limpiar estado
     setBuscando(true);
@@ -328,28 +333,33 @@ export function ScannedUrls({ onSaveComplete }: Props) {
     if (!resultados || resultadosOrdenados.length === 0) return;
     if (!confirm(`¿Guardar las ${resultadosOrdenados.length} listas verificadas de golpe?`)) return;
     setGuardandoTodas(true);
-    let guardadasCount = 0;
-    const pendientes = [...resultadosOrdenados];
-    for (const resultado of pendientes) {
-      try {
-        const nombre = limpiarNombre(resultado.entrada.portal, resultado.url);
-        const form = new FormData();
-        form.append('nombre', nombre);
-        form.append('clave', resultado.clave);
-        form.append('filtro', resultados?.filtro || filtro);
-        form.append('max_conn', String(resultado.entrada.max_conn || 1));
-        form.append('caducidad', resultado.entrada.caducidad || '');
-        form.append('observaciones', resultado.entrada.observaciones || '');
-        form.append('ping', String(resultado.entrada.ping || 0));
-        const res = await fetch('http://localhost:8000/urls/guardar', { method: 'POST', body: form });
-        if (res.ok) {
-          guardadasCount++;
-          setResultados(prev => prev ? { ...prev, con: prev.con.filter(r => r.url !== resultado.url) } : prev);
-        }
-      } catch { /* continuar con las demás */ }
+    try {
+      const entradas = resultadosOrdenados.map(resultado => ({
+        nombre: limpiarNombre(resultado.entrada.portal, resultado.url),
+        url: resultado.url,
+        max_conn: resultado.entrada.max_conn || 1,
+        caducidad: resultado.entrada.caducidad || '',
+        observaciones: resultado.entrada.observaciones || '',
+        ping: resultado.entrada.ping || 0,
+      }));
+
+      const res = await fetch('http://localhost:8000/urls/guardar-todas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          entradas,
+          filtro: resultados?.filtro || filtro,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Error al guardar');
+      setResultados(prev => prev ? { ...prev, con: [] } : prev);
+      resultadosPersistidos = resultados ? { ...resultados, con: [] } : null;
+    } catch (err: any) {
+      setError(err.message || 'Error al guardar todas');
+    } finally {
+      setGuardandoTodas(false);
     }
-    setGuardandoTodas(false);
-    resultadosPersistidos = resultados ? { ...resultados, con: [] } : null;
   };
 
   const handleEliminarUrl = async (url: string) => {
@@ -556,7 +566,7 @@ export function ScannedUrls({ onSaveComplete }: Props) {
                   onChange={(e) => setMinCanales(Math.max(1, parseInt(e.target.value) || 1))}
                   min="1" className="w-14 bg-transparent py-3 text-white text-sm focus:outline-none" />
               </div>
-              <button type="submit" disabled={buscando || !filtro.trim()}
+              <button type="submit" disabled={buscando}
                 className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white font-medium px-6 py-3 rounded-xl transition-all">
                 {buscando ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
                 {buscando ? 'Buscando...' : 'Buscar'}

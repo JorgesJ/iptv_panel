@@ -531,12 +531,14 @@ def pedir_opciones(filtro_espana=True):
 # ─── Canales de Telegram ──────────────────────────────────────────────────────
 
 CANALES = [
-    {"id": 1, "username": CANAL,            "nombre": "CrackAndroid",           "privado": True,  "topic_id": TOPIC_ID},
-    {"id": 2, "username": "satglobaltv",    "nombre": "Aguila SAT HICHAM",      "privado": False, "topic_id": None},
-    {"id": 3, "username": "tugaiptv2025",   "nombre": "TUGA GRATIS IPTV",       "privado": False, "topic_id": None},
-    {"id": 4, "username": "iptv270",        "nombre": "Listas M3U Free",        "privado": False, "topic_id": None},
-    {"id": 5, "username": "ListIptvWorld",   "nombre": "List IPTV World",         "privado": False, "topic_id": None},
-    {"id": 6, "username": "Xtream_Iptv_Code","nombre": "Xtream IPTV Codes",       "privado": False, "topic_id": None},
+    {"id": 1, "username": CANAL,              "nombre": "CrackAndroid",           "privado": True,  "topic_id": TOPIC_ID},
+    {"id": 2, "username": "satglobaltv",      "nombre": "Aguila SAT HICHAM",      "privado": False, "topic_id": None},
+    {"id": 3, "username": "tugaiptv2025",     "nombre": "TUGA GRATIS IPTV",       "privado": False, "topic_id": None},
+    {"id": 4, "username": "iptv270",          "nombre": "Listas M3U Free",        "privado": False, "topic_id": None},
+    {"id": 5, "username": "ListIptvWorld",    "nombre": "List IPTV World",        "privado": False, "topic_id": None},
+    {"id": 6, "username": "Xtream_Iptv_Code", "nombre": "Xtream IPTV Codes",     "privado": False, "topic_id": None},
+    {"id": 7, "username": "canalestvspain",   "nombre": "Canales TV Spain",       "privado": False, "topic_id": None},
+    {"id": 8, "username": "tvpelisflixhd_plus","nombre": "TVPELISFLIXHD Plus",   "privado": False, "topic_id": None},
 ]
 
 # ─── Opción 1: Escanear Telegram ──────────────────────────────────────────────

@@ -124,15 +124,18 @@ def parsear_m3u(texto):
 
 
 def aplicar_filtro(canales, filtro):
+    # Sin filtro o comodín = devolver todos
+    if not filtro or not filtro.strip() or filtro.strip() == '*':
+        return canales
     filtros = [normalizar(f.strip()) for f in filtro.split(',') if f.strip()]
     if not filtros:
-        return []
+        return canales
     def coincide(nombre):
         n = normalizar(nombre)
         for f in filtros:
-            if n.startswith(f):      # ES: Antena 3
+            if n.startswith(f):
                 return True
-            if f in n:               # (ES) Antena 3, ESPAÑA, etc.
+            if f in n:
                 return True
         return False
     return [c for c in canales if coincide(c["nombre"])]
@@ -357,7 +360,7 @@ async def importar_json_verificadas(archivo: UploadFile = File(...)):
 
 
 @app.post("/urls/buscar")
-async def buscar_en_urls(filtro: str = Form(...), fuente: str = Form(default="telegram")):
+async def buscar_en_urls(filtro: str = Form(default=""), fuente: str = Form(default="telegram")):
     if fuente == "telegram":
         urls = cargar_urls()
     elif fuente == "verificadas":
@@ -617,11 +620,236 @@ def guardar_desde_scan(
     })
 
 
+@app.post("/urls/guardar-todas")
+async def guardar_todas_desde_scan(request: Request):
+    """
+    Guarda múltiples listas en paralelo. Recibe lista de entradas con clave, nombre, metadata.
+    Descarga todos los M3U en paralelo con aiohttp — mucho más rápido que en serie.
+    """
+    body = await request.json()
+    entradas = body.get("entradas", [])
+    filtro = body.get("filtro", "")
+
+    if not entradas:
+        raise HTTPException(400, "No hay entradas que guardar")
+
+    def construir_nombre(nombre_raw, max_conn, caducidad):
+        nombre_limpio = re.sub(r'https?://', '', nombre_raw)
+        nombre_limpio = re.sub(r'[\\/*?:"<>|]', '_', nombre_limpio).strip()
+        sufijo = f"_Conn{max_conn}"
+        if caducidad and caducidad != 'Unlimited':
+            try:
+                partes = caducidad.split('-')
+                sufijo += f"_{partes[2]}_{partes[1]}_{partes[0][2:]}"
+            except Exception:
+                pass
+        elif caducidad == 'Unlimited':
+            sufijo += "_Unlim"
+        return nombre_limpio, nombre_limpio + sufijo
+
+    async def descargar_y_guardar(session, entrada, sem):
+        async with sem:
+            url = entrada.get("url", "")
+            max_conn = int(entrada.get("max_conn", 1))
+            caducidad = entrada.get("caducidad", "")
+            observaciones = entrada.get("observaciones", "")
+            ping = int(entrada.get("ping", 0))
+            nombre_raw = entrada.get("nombre", url)
+
+            nombre_limpio, nombre_archivo = construir_nombre(nombre_raw, max_conn, caducidad)
+            filename = os.path.join(M3U_FOLDER, f"{nombre_archivo}.m3u")
+            canales = []
+            descarga_ok = True
+
+            try:
+                headers = {"User-Agent": "VLC/3.0.20 LibVLC/3.0.20"}
+                async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as r:
+                    if r.status in (200, 206):
+                        texto = await r.text()
+                        todos = parsear_m3u(texto)
+                        # Aplicar filtro si hay uno, si no todos
+                        if filtro and filtro.strip():
+                            canales = aplicar_filtro(todos, filtro)
+                            if not canales:
+                                canales = todos  # si no matchea nada, guardar todos
+                        else:
+                            # Sin filtro: intentar quedarse con ES primero
+                            canales_es = [c for c in todos if
+                                c['nombre'].upper().startswith('ES:') or
+                                c['nombre'].upper().startswith('ES ') or
+                                'ESPAÑA' in c['nombre'].upper() or
+                                'ESPANA' in c['nombre'].upper()
+                            ]
+                            canales = canales_es if canales_es else todos
+                    else:
+                        descarga_ok = False
+            except Exception:
+                descarga_ok = False
+
+            # Guardar archivo .m3u
+            with open(filename, "w", encoding="utf-8") as f:
+                f.write("#EXTM3U\n")
+                if canales:
+                    for c in canales:
+                        f.write(c["extinf"] + "\n")
+                        f.write(c["url"] + "\n")
+                else:
+                    f.write(f"#EXTINF:-1,{nombre_limpio}\n{url}\n")
+
+            return {
+                "nombre": nombre_limpio,
+                "url": url,
+                "filtro": filtro,
+                "fecha": datetime.now().isoformat(timespec="seconds"),
+                "total_canales": len(canales),
+                "max_conn": max_conn,
+                "caducidad": caducidad,
+                "observaciones": observaciones,
+                "ping": ping,
+                "archivo": filename,
+                "descarga_ok": descarga_ok,
+                "tipo_lista": "Cuenta Xtream (M3U)" if "get.php" in url.lower() else "Lista M3U",
+            }
+
+    sem = asyncio.Semaphore(8)  # 8 descargas en paralelo
+    connector = aiohttp.TCPConnector(ssl=False)
+    async with aiohttp.ClientSession(connector=connector) as session:
+        tareas = [descargar_y_guardar(session, e, sem) for e in entradas]
+        resultados = await asyncio.gather(*tareas)
+
+    # Guardar todas en listas.json de una vez
+    listas = cargar_listas()
+    nombres_nuevos = {r["nombre"] for r in resultados}
+    listas = [l for l in listas if l["nombre"] not in nombres_nuevos]
+    listas.extend(resultados)
+    guardar_listas(listas)
+
+    return JSONResponse({
+        "ok": True,
+        "guardadas": len(resultados),
+        "con_canales": sum(1 for r in resultados if r["total_canales"] > 0),
+    })
+
+
 @app.delete("/urls/eliminar")
 def eliminar_url(url: str = Form(...)):
     urls = cargar_urls()
     guardar_urls([u for u in urls if u["url"] != url])
     return JSONResponse({"ok": True})
+
+
+@app.post("/urls/guardar-todas")
+async def guardar_todas_desde_scan(request: Request):
+    """
+    Guarda múltiples listas en paralelo desde el backend.
+    Recibe lista de {url, nombre, max_conn, caducidad, observaciones, ping, filtro}.
+    Descarga todas en paralelo con aiohttp y guarda en listas.json.
+    El proceso ocurre en el servidor — no depende de que el frontend esté abierto.
+    """
+    body = await request.json()
+    entradas = body.get("entradas", [])
+    filtro = body.get("filtro", "")
+
+    if not entradas:
+        raise HTTPException(400, "No hay entradas que guardar")
+
+    resultados_guardado = []
+    lock = asyncio.Lock()
+
+    async def procesar_entrada(session, entrada, sem):
+        async with sem:
+            url = entrada.get("url", "")
+            nombre_raw = entrada.get("nombre", "")
+            max_conn = int(entrada.get("max_conn", 1))
+            caducidad = entrada.get("caducidad", "")
+            observaciones = entrada.get("observaciones", "")
+            ping = int(entrada.get("ping", 0))
+
+            nombre_limpio = re.sub(r'https?://', '', nombre_raw)
+            nombre_limpio = re.sub(r'[\\/*?:"<>|]', '_', nombre_limpio).strip()
+
+            sufijo = f"_Conn{max_conn}"
+            if caducidad and caducidad != 'Unlimited':
+                try:
+                    partes = caducidad.split('-')
+                    sufijo += f"_{partes[2]}_{partes[1]}_{partes[0][2:]}"
+                except Exception:
+                    pass
+            elif caducidad == 'Unlimited':
+                sufijo += "_Unlim"
+            nombre_archivo = nombre_limpio + sufijo
+            filename = os.path.join(M3U_FOLDER, f"{nombre_archivo}.m3u")
+
+            canales = []
+            descarga_ok = True
+
+            try:
+                headers = {"User-Agent": "VLC/3.0.20 LibVLC/3.0.20"}
+                async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=20)) as r:
+                    if r.status in (200, 206):
+                        texto = await r.text()
+                        todos = parsear_m3u(texto)
+                        # Aplicar filtro si hay, si no todos
+                        if filtro and filtro.strip():
+                            filtrados = aplicar_filtro(todos, filtro)
+                            canales = filtrados if filtrados else todos
+                        else:
+                            # Sin filtro: intentar ES primero, si no todos
+                            canales_es = [c for c in todos if
+                                c['nombre'].upper().startswith('ES:') or
+                                c['nombre'].upper().startswith('ES ') or
+                                'ESPAÑA' in c['nombre'].upper() or
+                                'ESPANA' in c['nombre'].upper()
+                            ]
+                            canales = canales_es if canales_es else todos
+                    else:
+                        descarga_ok = False
+            except Exception:
+                descarga_ok = False
+
+            # Guardar .m3u
+            with open(filename, "w", encoding="utf-8") as f:
+                f.write("#EXTM3U\n")
+                if canales:
+                    for c in canales:
+                        f.write(c["extinf"] + "\n")
+                        f.write(c["url"] + "\n")
+                else:
+                    f.write(f"#EXTINF:-1,{nombre_limpio}\n{url}\n")
+
+            entrada_lista = {
+                "nombre": nombre_limpio,
+                "url": url,
+                "filtro": filtro,
+                "fecha": datetime.now().isoformat(timespec="seconds"),
+                "total_canales": len(canales),
+                "max_conn": max_conn,
+                "caducidad": caducidad,
+                "observaciones": observaciones,
+                "ping": ping,
+                "archivo": filename,
+                "descarga_ok": descarga_ok,
+                "tipo_lista": "Cuenta Xtream (M3U)" if "get.php" in url.lower() else "Lista M3U",
+            }
+
+            async with lock:
+                listas = cargar_listas()
+                listas = [l for l in listas if l["nombre"] != nombre_limpio]
+                listas.append(entrada_lista)
+                guardar_listas(listas)
+                resultados_guardado.append({"nombre": nombre_limpio, "ok": True, "canales": len(canales)})
+
+    sem = asyncio.Semaphore(8)  # 8 descargas en paralelo
+    connector = aiohttp.TCPConnector(ssl=False)
+    async with aiohttp.ClientSession(connector=connector) as session:
+        tareas = [procesar_entrada(session, e, sem) for e in entradas]
+        await asyncio.gather(*tareas)
+
+    return JSONResponse({
+        "ok": True,
+        "guardadas": len(resultados_guardado),
+        "resultados": resultados_guardado,
+    })
 
 
 @app.post("/urls/importar-txt")

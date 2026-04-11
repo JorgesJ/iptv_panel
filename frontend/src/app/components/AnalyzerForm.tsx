@@ -54,6 +54,14 @@ export function AnalyzerForm({ onCheckResult }: Props) {
   const [mostrandoModalNombre, setMostrandoModalNombre] = useState(false);
   const editorFileRef = useRef<HTMLInputElement | null>(null);
 
+  // Drag-select
+  const dragSelecting = useRef(false);
+  const dragStartIdx = useRef<number | null>(null);
+  const dragLastIdx = useRef<number | null>(null);
+  const dragMode = useRef<'add' | 'remove'>('add');
+  const [dragRect, setDragRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const lastSelectedIdx = useRef<number | null>(null); // último idx seleccionado para flechas
+
   // ─── Bloque 1 ─────────────────────────────────────────────────────────────
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -187,6 +195,7 @@ export function AnalyzerForm({ onCheckResult }: Props) {
   );
 
   const toggleSelEditor = (idx: number) => {
+    lastSelectedIdx.current = idx;
     setEditorSeleccionados(prev => {
       const nuevo = new Set(prev);
       if (nuevo.has(idx)) nuevo.delete(idx); else nuevo.add(idx);
@@ -197,6 +206,121 @@ export function AnalyzerForm({ onCheckResult }: Props) {
   const toggleTodosEditor = () => {
     if (editorSeleccionados.size === canalesFiltrados.length) setEditorSeleccionados(new Set());
     else setEditorSeleccionados(new Set(canalesFiltrados.map((_, i) => i)));
+  };
+
+  // Drag-select con rectángulo visual
+  const tableContainerRef = useRef<HTMLDivElement | null>(null);
+  const dragStartPos = useRef<{ x: number; y: number } | null>(null);
+  const dragHasMoved = useRef(false);
+  const seleccionAntesDrag = useRef<Set<number>>(new Set());
+  const isKeyScrolling = useRef(false);
+
+  const handleTableMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    // Solo iniciar drag si el click NO es sobre un botón o checkbox
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('input')) return;
+    e.preventDefault();
+    dragSelecting.current = true;
+    dragHasMoved.current = false;
+    dragStartPos.current = { x: e.clientX, y: e.clientY };
+    seleccionAntesDrag.current = new Set(editorSeleccionados);
+    setDragRect(null);
+  };
+
+  const handleTableMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!dragSelecting.current || !dragStartPos.current || !tableContainerRef.current) return;
+    const dx = e.clientX - dragStartPos.current.x;
+    const dy = e.clientY - dragStartPos.current.y;
+    if (!dragHasMoved.current && Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
+    dragHasMoved.current = true;
+
+    const containerRect = tableContainerRef.current.getBoundingClientRect();
+    const x1 = Math.min(e.clientX, dragStartPos.current.x) - containerRect.left;
+    const y1 = Math.min(e.clientY, dragStartPos.current.y) - containerRect.top;
+    const x2 = Math.max(e.clientX, dragStartPos.current.x) - containerRect.left;
+    const y2 = Math.max(e.clientY, dragStartPos.current.y) - containerRect.top;
+
+    setDragRect({ x: x1, y: y1, w: x2 - x1, h: y2 - y1 });
+
+    // Seleccionar filas cuyo elemento esté dentro del rectángulo
+    const rows = tableContainerRef.current.querySelectorAll('tbody tr');
+    const nuevaSel = new Set(seleccionAntesDrag.current);
+    rows.forEach((row, i) => {
+      const rowRect = row.getBoundingClientRect();
+      const rowTop = rowRect.top - containerRect.top;
+      const rowBottom = rowRect.bottom - containerRect.top;
+      const overlap = rowBottom > y1 && rowTop < y2;
+      if (overlap) nuevaSel.add(i);
+      // Si no hay overlap NO borramos — mantenemos la selección acumulada
+    });
+    setEditorSeleccionados(nuevaSel);
+  };
+
+  const handleTableMouseUp = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!dragSelecting.current) return;
+    // Ignorar mouseleave si el botón sigue pulsado O si es un scroll por teclado
+    if (e.type === 'mouseleave' && (e.buttons === 1 || isKeyScrolling.current)) return;
+    const wasDragging = dragHasMoved.current;
+    dragSelecting.current = false;
+    dragHasMoved.current = false;
+    dragStartPos.current = null;
+    setDragRect(null);
+
+    // Si no hubo movimiento real → click normal en la fila
+    if (!wasDragging) {
+      const target = e.target as HTMLElement;
+      const row = target.closest('tr[data-idx]') as HTMLElement | null;
+      if (row) {
+        const idx = parseInt(row.dataset.idx ?? '-1');
+        if (idx >= 0) toggleSelEditor(idx);
+      }
+    }
+  };
+
+  // Flechas teclado: extienden la selección sin cancelarla
+  const handleTableKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault();
+    e.stopPropagation();
+    const maxIdx = canalesFiltrados.length - 1;
+    if (maxIdx < 0) return;
+
+    if (lastSelectedIdx.current === null) {
+      const startIdx = e.key === 'ArrowDown' ? 0 : maxIdx;
+      lastSelectedIdx.current = startIdx;
+      setEditorSeleccionados(new Set([startIdx]));
+      return;
+    }
+
+    const siguiente = e.key === 'ArrowDown'
+      ? Math.min(lastSelectedIdx.current + 1, maxIdx)
+      : Math.max(lastSelectedIdx.current - 1, 0);
+
+    if (siguiente === lastSelectedIdx.current) return;
+    lastSelectedIdx.current = siguiente;
+
+    // Acumular selección
+    setEditorSeleccionados(prev => { const n = new Set(prev); n.add(siguiente); return n; });
+
+    // Scroll manual en el div interior — sin scrollIntoView para evitar eventos que interfieren
+    isKeyScrolling.current = true;
+    setTimeout(() => {
+      const scrollDiv = tableContainerRef.current?.querySelector('.overflow-y-auto') as HTMLElement | null;
+      if (scrollDiv) {
+        const rows = scrollDiv.querySelectorAll('tbody tr');
+        const row = rows[siguiente] as HTMLElement | undefined;
+        if (row) {
+          const rowTop = row.offsetTop;
+          const rowBottom = rowTop + row.offsetHeight;
+          const viewTop = scrollDiv.scrollTop;
+          const viewBottom = viewTop + scrollDiv.clientHeight;
+          if (rowBottom > viewBottom) scrollDiv.scrollTop = rowBottom - scrollDiv.clientHeight;
+          else if (rowTop < viewTop) scrollDiv.scrollTop = rowTop;
+        }
+      }
+      isKeyScrolling.current = false;
+    }, 0);
   };
 
   const handleBorrarUno = (idxVisible: number) => {
@@ -478,8 +602,27 @@ export function AnalyzerForm({ onCheckResult }: Props) {
               </div>
             </div>
 
-            <div className="rounded-xl border border-white/10 overflow-hidden">
-              <div className="max-h-96 overflow-y-auto">
+            <p className="text-slate-600 text-xs mb-2">
+              💡 Click para seleccionar uno · Arrastra para seleccionar varios a la vez
+            </p>
+            <div
+              ref={tableContainerRef}
+              className="rounded-xl border border-white/10 overflow-hidden relative outline-none"
+              tabIndex={0}
+              onMouseDown={handleTableMouseDown}
+              onMouseMove={handleTableMouseMove}
+              onMouseUp={handleTableMouseUp}
+              onMouseLeave={handleTableMouseUp}
+              onKeyDown={handleTableKeyDown}
+            >
+              {/* Rectángulo de selección visual */}
+              {dragRect && (
+                <div
+                  className="absolute pointer-events-none z-10 border border-blue-400 bg-blue-400/10 rounded"
+                  style={{ left: dragRect.x, top: dragRect.y, width: dragRect.w, height: dragRect.h }}
+                />
+              )}
+              <div className="max-h-[600px] overflow-y-auto select-none">
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-[#0d1117] border-b border-white/10">
                     <tr>
@@ -496,9 +639,10 @@ export function AnalyzerForm({ onCheckResult }: Props) {
                   </thead>
                   <tbody>
                     {canalesFiltrados.map((canal, i) => (
-                      <tr key={i} onClick={() => toggleSelEditor(i)}
+                      <tr key={i}
+                        data-idx={i}
                         className={`border-b border-white/5 cursor-pointer transition-colors ${editorSeleccionados.has(i) ? 'bg-blue-500/10' : 'hover:bg-white/5'}`}>
-                        <td className="px-3 py-2" onClick={e => e.stopPropagation()}>
+                        <td className="px-3 py-2" onClick={e => { e.stopPropagation(); toggleSelEditor(i); }}>
                           <input type="checkbox" checked={editorSeleccionados.has(i)} onChange={() => toggleSelEditor(i)}
                             className="cursor-pointer accent-blue-500" />
                         </td>
