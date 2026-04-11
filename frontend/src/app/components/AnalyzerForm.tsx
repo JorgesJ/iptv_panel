@@ -18,6 +18,7 @@ interface M3UInfo {
   status: string;
   total_canales: number;
   ping: number;
+  api_disponible: boolean;
 }
 
 export function AnalyzerForm({ onCheckResult }: Props) {
@@ -67,8 +68,10 @@ export function AnalyzerForm({ onCheckResult }: Props) {
       const texto = await file.text();
 
       // Extraer credenciales del M3U
-      const urlMatch = texto.match(/https?:\/\/[^\s]+\/live\/([^\s\/]+)\/([^\s\/]+)\//);
-      const urlMatch2 = texto.match(/https?:\/\/([^:\/\s]+(?::\d+)?)\/get\.php\?username=([^\&\s]+)&password=([^\&\s]+)/);
+      // Formato 1: get.php?username=X&password=Y
+      const urlMatch2 = texto.match(/https?:\/\/([^\s\/]+)\/get\.php\?username=([^&\s]+)&password=([^&\s]+)/);
+      // Formato 2: /live/usuario/password/id.ts (con puerto opcional)
+      const urlMatch = texto.match(/https?:\/\/([^\s\/]+)\/live\/([^\/\s]+)\/([^\/\s]+)\//);
 
       let servidor = '', usuario = '', password = '', apiUrl = '';
 
@@ -79,11 +82,10 @@ export function AnalyzerForm({ onCheckResult }: Props) {
         password = urlMatch2[3];
         apiUrl = `http://${servidor}/player_api.php?username=${usuario}&password=${password}`;
       } else if (urlMatch) {
-        // Formato /live/user/pass/id.ts
-        const baseMatch = texto.match(/(https?:\/\/[^\/\s]+)/);
-        servidor = baseMatch ? baseMatch[1].replace(/https?:\/\//, '') : '';
-        usuario = urlMatch[1];
-        password = urlMatch[2];
+        // Formato /live/user/pass/id.ts — servidor incluye puerto si lo tiene
+        servidor = urlMatch[1];
+        usuario = urlMatch[2];
+        password = urlMatch[3];
         apiUrl = `http://${servidor}/player_api.php?username=${usuario}&password=${password}`;
       } else {
         throw new Error('No se encontraron credenciales en el archivo M3U');
@@ -182,9 +184,15 @@ export function AnalyzerForm({ onCheckResult }: Props) {
               <span className="flex items-center gap-1.5 text-slate-300 text-xs bg-white/10 px-2.5 py-1 rounded-full">
                 <Tv2 className="size-3" /> {m3uInfo.total_canales} canales
               </span>
-              <span className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full ${m3uInfo.activas > 0 ? 'bg-orange-500/20 text-orange-300' : 'bg-green-500/20 text-green-300'}`}>
-                <Wifi className="size-3" /> {m3uInfo.activas}/{m3uInfo.max_conn} conexiones
-              </span>
+              {m3uInfo.api_disponible ? (
+                <span className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full ${m3uInfo.activas > 0 ? 'bg-orange-500/20 text-orange-300' : 'bg-green-500/20 text-green-300'}`}>
+                  <Wifi className="size-3" /> {m3uInfo.activas}/{m3uInfo.max_conn} conexiones
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-yellow-500/20 text-yellow-300">
+                  <Wifi className="size-3" /> API no disponible
+                </span>
+              )}
               {m3uInfo.ping > 0 && (
                 <span className="flex items-center gap-1.5 text-slate-300 text-xs bg-white/10 px-2.5 py-1 rounded-full">
                   <Zap className="size-3" /> {m3uInfo.ping}ms

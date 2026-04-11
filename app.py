@@ -1465,37 +1465,70 @@ async def check_m3u_file(request: Request):
             ) as r:
                 ping = round((time.time() - t0) * 1000)
                 if r.status not in (200, 206):
+                    # Si es 451 (bloqueado por IP) devolver info básica sin API
+                    if r.status == 451:
+                        return JSONResponse({
+                            'nombre': nombre,
+                            'url': f"http://{servidor}/get.php?username={usuario}&password={password}&type=m3u",
+                            'servidor': servidor,
+                            'usuario': usuario,
+                            'password': password,
+                            'max_conn': 0,
+                            'activas': 0,
+                            'caducidad': '',
+                            'status': 'Bloqueado por IP (activa Warp)',
+                            'total_canales': total_canales,
+                            'ping': ping,
+                            'api_disponible': False,
+                        })
                     raise HTTPException(400, f"Servidor respondió {r.status}")
-                info = await r.json(content_type=None)
-                user_info = info.get('user_info', {})
+                texto = await r.text()
+                ping_val = round((time.time() - t0) * 1000)
 
-                # Caducidad
-                exp = user_info.get('exp_date')
-                if exp:
-                    try:
-                        from datetime import datetime
-                        caducidad = datetime.fromtimestamp(int(exp)).strftime('%Y-%m-%d')
-                    except:
-                        caducidad = str(exp)
-                else:
-                    caducidad = 'Unlimited' if user_info.get('is_trial') == '0' else ''
+                # Intentar parsear como JSON (Xtream API)
+                try:
+                    info = json.loads(texto)
+                    user_info = info.get('user_info', {})
 
-                if user_info.get('status') == 'Active' and not exp:
-                    caducidad = 'Unlimited'
+                    exp = user_info.get('exp_date')
+                    if exp:
+                        try:
+                            caducidad = datetime.fromtimestamp(int(exp)).strftime('%Y-%m-%d')
+                        except:
+                            caducidad = str(exp)
+                    else:
+                        caducidad = 'Unlimited' if user_info.get('status') == 'Active' else ''
 
-                return JSONResponse({
-                    'nombre': nombre,
-                    'url': f"http://{servidor}/get.php?username={usuario}&password={password}&type=m3u",
-                    'servidor': servidor,
-                    'usuario': usuario,
-                    'password': password,
-                    'max_conn': int(user_info.get('max_connections', 0)),
-                    'activas': int(user_info.get('active_cons', 0)),
-                    'caducidad': caducidad,
-                    'status': user_info.get('status', ''),
-                    'total_canales': total_canales,
-                    'ping': ping,
-                })
+                    return JSONResponse({
+                        'nombre': nombre,
+                        'url': f"http://{servidor}/get.php?username={usuario}&password={password}&type=m3u",
+                        'servidor': servidor,
+                        'usuario': usuario,
+                        'password': password,
+                        'max_conn': int(user_info.get('max_connections', 0)),
+                        'activas': int(user_info.get('active_cons', 0)),
+                        'caducidad': caducidad,
+                        'status': user_info.get('status', ''),
+                        'total_canales': total_canales,
+                        'ping': ping_val,
+                        'api_disponible': True,
+                    })
+                except Exception:
+                    # Servidor no expone API — devolver info básica del archivo
+                    return JSONResponse({
+                        'nombre': nombre,
+                        'url': f"http://{servidor}/live/{usuario}/{password}/",
+                        'servidor': servidor,
+                        'usuario': usuario,
+                        'password': password,
+                        'max_conn': 0,
+                        'activas': 0,
+                        'caducidad': '',
+                        'status': 'Sin API',
+                        'total_canales': total_canales,
+                        'ping': ping_val,
+                        'api_disponible': False,
+                    })
     except aiohttp.ClientError as e:
         raise HTTPException(400, f"Error de conexión: {str(e)[:80]}")
     except Exception as e:
