@@ -1533,3 +1533,54 @@ async def check_m3u_file(request: Request):
         raise HTTPException(400, f"Error de conexión: {str(e)[:80]}")
     except Exception as e:
         raise HTTPException(400, f"Error: {str(e)[:80]}")
+
+
+@app.post("/listas/guardar-directo")
+async def guardar_lista_directo(request: Request):
+    """
+    Guarda una lista M3U directamente desde el frontend (editor local).
+    Recibe: nombre, canales (lista), url, max_conn, caducidad, observaciones, ping.
+    Respeta el orden exacto de los canales recibidos.
+    """
+    body = await request.json()
+    nombre_raw = body.get("nombre", "lista_editada")
+    canales_data = body.get("canales", [])
+    url_origen = body.get("url", "")
+    max_conn = int(body.get("max_conn", 0))
+    caducidad = body.get("caducidad", "")
+    observaciones = body.get("observaciones", "")
+    ping = int(body.get("ping", 0))
+
+    if not canales_data:
+        raise HTTPException(400, "No hay canales que guardar")
+
+    nombre_limpio = re.sub(r'https?://', '', nombre_raw)
+    nombre_limpio = re.sub(r'[\\/*?:"<>|]', '_', nombre_limpio).strip()
+    if not nombre_limpio:
+        nombre_limpio = "lista_editada"
+
+    filename = os.path.join(M3U_FOLDER, f"{nombre_limpio}.m3u")
+    with open(filename, "w", encoding="utf-8") as f:
+        f.write("#EXTM3U\n")
+        for c in canales_data:
+            f.write(c["extinf"] + "\n")
+            f.write(c["url"] + "\n")
+
+    listas = cargar_listas()
+    listas = [l for l in listas if l["nombre"] != nombre_limpio]
+    listas.append({
+        "nombre": nombre_limpio,
+        "url": url_origen,
+        "filtro": "",
+        "fecha": datetime.now().isoformat(timespec="seconds"),
+        "total_canales": len(canales_data),
+        "max_conn": max_conn,
+        "caducidad": caducidad,
+        "observaciones": observaciones,
+        "ping": ping,
+        "archivo": filename,
+        "tipo_lista": "Lista M3U editada",
+    })
+    guardar_listas(listas)
+
+    return JSONResponse({"ok": True, "guardados": len(canales_data), "nombre": nombre_limpio})

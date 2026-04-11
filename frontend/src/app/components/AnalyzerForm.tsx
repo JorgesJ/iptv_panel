@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Loader2, Search, Upload, Wifi, Zap, Calendar, Tv2, Trash2, Download } from 'lucide-react';
+import { Loader2, Search, Upload, Wifi, Zap, Calendar, Tv2, Trash2, Download, Save } from 'lucide-react';
 import type { CheckResult } from '../App';
 
 interface Props {
@@ -49,9 +49,12 @@ export function AnalyzerForm({ onCheckResult }: Props) {
   const [editorEliminandoSel, setEditorEliminandoSel] = useState(false);
   const [editorFiltrando, setEditorFiltrando] = useState(false);
   const [editorMensaje, setEditorMensaje] = useState('');
+  const [guardando, setGuardando] = useState(false);
+  const [nombreGuardar, setNombreGuardar] = useState('');
+  const [mostrandoModalNombre, setMostrandoModalNombre] = useState(false);
   const editorFileRef = useRef<HTMLInputElement | null>(null);
 
-  // ─── Bloque 1: Comprobar URL ──────────────────────────────────────────────
+  // ─── Bloque 1 ─────────────────────────────────────────────────────────────
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,7 +74,7 @@ export function AnalyzerForm({ onCheckResult }: Props) {
     }
   };
 
-  // ─── Bloque 2: Analizar archivo M3U ──────────────────────────────────────
+  // ─── Bloque 2 ─────────────────────────────────────────────────────────────
 
   const handleM3uFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -110,7 +113,7 @@ export function AnalyzerForm({ onCheckResult }: Props) {
     }
   };
 
-  // ─── Bloque 3: Editor M3U ─────────────────────────────────────────────────
+  // ─── Bloque 3: Editor ─────────────────────────────────────────────────────
 
   const parsearM3U = (texto: string): Canal[] => {
     const lineas = texto.split('\n');
@@ -139,9 +142,7 @@ export function AnalyzerForm({ onCheckResult }: Props) {
       } else if (urlMatch) {
         servidor = urlMatch[1]; usuario = urlMatch[2]; password = urlMatch[3];
         apiUrl = `http://${servidor}/player_api.php?username=${usuario}&password=${password}`;
-      } else {
-        return null;
-      }
+      } else return null;
       const totalCanales = (texto.match(/#EXTINF/g) || []).length;
       const res = await fetch(`http://localhost:8000/check-m3u-file`, {
         method: 'POST',
@@ -150,9 +151,7 @@ export function AnalyzerForm({ onCheckResult }: Props) {
       });
       if (!res.ok) return null;
       return await res.json();
-    } catch {
-      return null;
-    }
+    } catch { return null; }
   };
 
   const handleEditorFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -165,15 +164,12 @@ export function AnalyzerForm({ onCheckResult }: Props) {
     try {
       const texto = await file.text();
       const canales = parsearM3U(texto);
-      if (canales.length === 0) {
-        setEditorMensaje('⚠️ No se encontraron canales en el archivo');
-        return;
-      }
+      if (canales.length === 0) { setEditorMensaje('⚠️ No se encontraron canales en el archivo'); return; }
       setEditorCanales(canales);
-      setEditorNombre(file.name.replace(/\.m3u8?$/i, ''));
+      const nombreBase = file.name.replace(/\.m3u8?$/i, '');
+      setEditorNombre(nombreBase);
+      setNombreGuardar(nombreBase);
       setEditorMensaje(`✅ ${canales.length} canales cargados`);
-
-      // Consultar info del servidor en segundo plano
       setEditorLoadingInfo(true);
       consultarInfoServidor(texto, file.name).then(info => {
         setEditorInfo(info);
@@ -199,11 +195,8 @@ export function AnalyzerForm({ onCheckResult }: Props) {
   };
 
   const toggleTodosEditor = () => {
-    if (editorSeleccionados.size === canalesFiltrados.length) {
-      setEditorSeleccionados(new Set());
-    } else {
-      setEditorSeleccionados(new Set(canalesFiltrados.map((_, i) => i)));
-    }
+    if (editorSeleccionados.size === canalesFiltrados.length) setEditorSeleccionados(new Set());
+    else setEditorSeleccionados(new Set(canalesFiltrados.map((_, i) => i)));
   };
 
   const handleBorrarUno = (idxVisible: number) => {
@@ -249,9 +242,7 @@ export function AnalyzerForm({ onCheckResult }: Props) {
   const handleDescargar = () => {
     if (editorCanales.length === 0) return;
     let contenido = '#EXTM3U\n';
-    for (const c of editorCanales) {
-      contenido += c.extinf + '\n' + c.url + '\n';
-    }
+    for (const c of editorCanales) contenido += c.extinf + '\n' + c.url + '\n';
     const blob = new Blob([contenido], { type: 'application/octet-stream' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -259,7 +250,36 @@ export function AnalyzerForm({ onCheckResult }: Props) {
     a.click();
   };
 
-  // ─── Componente reutilizable: badges de info del servidor ─────────────────
+  const handleGuardarEnPanel = async () => {
+    if (editorCanales.length === 0) return;
+    setGuardando(true);
+    setEditorMensaje('');
+    try {
+      const res = await fetch('http://localhost:8000/listas/guardar-directo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nombre: nombreGuardar || editorNombre,
+          canales: editorCanales,
+          url: editorInfo?.url ?? '',
+          max_conn: editorInfo?.max_conn ?? 0,
+          caducidad: editorInfo?.caducidad ?? '',
+          observaciones: editorInfo?.status ?? '',
+          ping: editorInfo?.ping ?? 0,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Error al guardar');
+      setEditorMensaje(`✅ Lista "${data.nombre}" guardada con ${data.guardados} canales en el panel.`);
+      setMostrandoModalNombre(false);
+    } catch (err: any) {
+      setEditorMensaje(`⚠️ ${err.message}`);
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  // ─── InfoBadges reutilizable ──────────────────────────────────────────────
 
   const InfoBadges = ({ info, totalActual }: { info: M3UInfo; totalActual?: number }) => (
     <div className="flex flex-wrap gap-2">
@@ -292,9 +312,7 @@ export function AnalyzerForm({ onCheckResult }: Props) {
         </span>
       )}
       {info.api_disponible && info.max_conn > 0 && (
-        <span className="text-xs px-2.5 py-1 rounded-full bg-blue-500/10 text-blue-300">
-          Xtream API ✓
-        </span>
+        <span className="text-xs px-2.5 py-1 rounded-full bg-blue-500/10 text-blue-300">Xtream API ✓</span>
       )}
     </div>
   );
@@ -309,28 +327,16 @@ export function AnalyzerForm({ onCheckResult }: Props) {
         <h2 className="text-white font-semibold mb-4">Comprobar lista M3U</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="flex gap-3">
-            <input
-              type="url"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://ejemplo.com/lista.m3u"
-              disabled={loading}
-              className="flex-1 bg-white/5 border border-white/20 rounded-xl px-4 py-3 text-white placeholder:text-slate-500 focus:outline-none focus:border-blue-400 transition-all disabled:opacity-50"
-            />
-            <button
-              type="submit"
-              disabled={loading || !url.trim()}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white font-medium px-6 py-3 rounded-xl transition-all"
-            >
+            <input type="url" value={url} onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://ejemplo.com/lista.m3u" disabled={loading}
+              className="flex-1 bg-white/5 border border-white/20 rounded-xl px-4 py-3 text-white placeholder:text-slate-500 focus:outline-none focus:border-blue-400 transition-all disabled:opacity-50" />
+            <button type="submit" disabled={loading || !url.trim()}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white font-medium px-6 py-3 rounded-xl transition-all">
               {loading ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
               {loading ? 'Comprobando...' : 'Comprobar'}
             </button>
           </div>
-          {error && (
-            <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-300 text-sm">
-              ⚠️ {error}
-            </div>
-          )}
+          {error && <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-300 text-sm">⚠️ {error}</div>}
         </form>
       </div>
 
@@ -340,20 +346,13 @@ export function AnalyzerForm({ onCheckResult }: Props) {
         <p className="text-slate-500 text-sm mb-4">Sube un archivo .m3u para ver MaxConn, conexiones activas y caducidad sin guardarlo.</p>
         <div className="flex gap-3 items-center">
           <input ref={fileInputRef} type="file" accept=".m3u,.m3u8" className="hidden" onChange={handleM3uFile} />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={loadingM3u}
-            className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white font-medium px-6 py-3 rounded-xl transition-all"
-          >
+          <button onClick={() => fileInputRef.current?.click()} disabled={loadingM3u}
+            className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white font-medium px-6 py-3 rounded-xl transition-all">
             {loadingM3u ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
             {loadingM3u ? 'Consultando...' : 'Subir archivo M3U'}
           </button>
         </div>
-        {errorM3u && (
-          <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-300 text-sm mt-3">
-            ⚠️ {errorM3u}
-          </div>
-        )}
+        {errorM3u && <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-300 text-sm mt-3">⚠️ {errorM3u}</div>}
         {m3uInfo && (
           <div className="mt-4 bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
             <p className="text-white font-medium truncate">{m3uInfo.nombre}</p>
@@ -367,29 +366,60 @@ export function AnalyzerForm({ onCheckResult }: Props) {
       <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
         <h2 className="text-white font-semibold mb-2">Editar canales de archivo M3U</h2>
         <p className="text-slate-500 text-sm mb-4">
-          Carga un archivo .m3u, borra los canales que no quieras y descarga el resultado limpio.
+          Carga un archivo .m3u, borra los canales que no quieras y guarda o descarga el resultado con el orden exacto que ves en pantalla.
         </p>
 
+        {/* Botones principales */}
         <div className="flex gap-3 items-center flex-wrap">
           <input ref={editorFileRef} type="file" accept=".m3u,.m3u8" className="hidden" onChange={handleEditorFile} />
-          <button
-            onClick={() => editorFileRef.current?.click()}
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-6 py-3 rounded-xl transition-all"
-          >
+          <button onClick={() => editorFileRef.current?.click()}
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-6 py-3 rounded-xl transition-all">
             <Upload className="size-4" />
             {editorCanales.length > 0 ? 'Cargar otro archivo' : 'Cargar archivo M3U'}
           </button>
 
           {editorCanales.length > 0 && (
-            <button
-              onClick={handleDescargar}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-medium px-6 py-3 rounded-xl transition-all"
-            >
-              <Download className="size-4" />
-              Descargar editado ({editorCanales.length} canales)
-            </button>
+            <>
+              <button onClick={handleDescargar}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-medium px-6 py-3 rounded-xl transition-all">
+                <Download className="size-4" />
+                Descargar editado ({editorCanales.length})
+              </button>
+              <button onClick={() => setMostrandoModalNombre(true)}
+                className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white font-medium px-6 py-3 rounded-xl transition-all">
+                <Save className="size-4" />
+                Guardar en panel ({editorCanales.length})
+              </button>
+            </>
           )}
         </div>
+
+        {/* Modal nombre */}
+        {mostrandoModalNombre && (
+          <div className="mt-4 bg-black/40 border border-white/20 rounded-xl p-4 space-y-3">
+            <p className="text-white text-sm font-medium">Nombre para la lista en el panel:</p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={nombreGuardar}
+                onChange={(e) => setNombreGuardar(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && nombreGuardar.trim()) handleGuardarEnPanel(); if (e.key === 'Escape') setMostrandoModalNombre(false); }}
+                autoFocus
+                className="flex-1 bg-white/5 border border-white/20 rounded-xl px-4 py-2.5 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:border-green-400 transition-all"
+              />
+              <button onClick={handleGuardarEnPanel} disabled={guardando || !nombreGuardar.trim()}
+                className="flex items-center gap-2 bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white font-medium px-5 py-2.5 rounded-xl transition-all text-sm">
+                {guardando ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                {guardando ? 'Guardando...' : 'Confirmar'}
+              </button>
+              <button onClick={() => setMostrandoModalNombre(false)}
+                className="px-4 py-2.5 text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-xl text-sm transition-all">
+                Cancelar
+              </button>
+            </div>
+            <p className="text-slate-500 text-xs">Se guardará con el orden exacto que ves en pantalla.</p>
+          </div>
+        )}
 
         {editorMensaje && (
           <div className={`mt-3 rounded-xl px-4 py-3 text-sm ${editorMensaje.startsWith('✅') ? 'bg-green-500/10 border border-green-500/20 text-green-300' : 'bg-red-500/10 border border-red-500/20 text-red-300'}`}>
@@ -428,29 +458,20 @@ export function AnalyzerForm({ onCheckResult }: Props) {
           <div className="mt-4">
             <div className="flex items-center gap-2 mb-3 flex-wrap">
               <span className="text-slate-400 text-sm">{canalesFiltrados.length} canales</span>
-              <input
-                type="text"
-                value={editorBuscar}
+              <input type="text" value={editorBuscar}
                 onChange={(e) => { setEditorBuscar(e.target.value); setEditorSeleccionados(new Set()); }}
                 placeholder="Buscar canal..."
-                className="flex-1 min-w-40 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-white text-sm placeholder:text-slate-600 focus:outline-none focus:border-blue-400"
-              />
+                className="flex-1 min-w-40 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-white text-sm placeholder:text-slate-600 focus:outline-none focus:border-blue-400" />
               <div className="flex gap-2 ml-auto flex-wrap">
                 {editorSeleccionados.size > 0 && (
-                  <button
-                    onClick={handleBorrarSeleccionados}
-                    disabled={editorEliminandoSel}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white rounded-lg text-xs font-medium transition-all"
-                  >
+                  <button onClick={handleBorrarSeleccionados} disabled={editorEliminandoSel}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white rounded-lg text-xs font-medium transition-all">
                     {editorEliminandoSel ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
                     Eliminar {editorSeleccionados.size} seleccionados
                   </button>
                 )}
-                <button
-                  onClick={handleMantenerES}
-                  disabled={editorFiltrando}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-500 disabled:opacity-40 text-white rounded-lg text-xs font-medium transition-all"
-                >
+                <button onClick={handleMantenerES} disabled={editorFiltrando}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-500 disabled:opacity-40 text-white rounded-lg text-xs font-medium transition-all">
                   {editorFiltrando ? <Loader2 className="size-3.5 animate-spin" /> : '🇪🇸'}
                   Mantener solo ES:
                 </button>
@@ -463,12 +484,9 @@ export function AnalyzerForm({ onCheckResult }: Props) {
                   <thead className="sticky top-0 bg-[#0d1117] border-b border-white/10">
                     <tr>
                       <th className="w-8 px-3 py-2.5">
-                        <input
-                          type="checkbox"
+                        <input type="checkbox"
                           checked={canalesFiltrados.length > 0 && editorSeleccionados.size === canalesFiltrados.length}
-                          onChange={toggleTodosEditor}
-                          className="cursor-pointer accent-blue-500"
-                        />
+                          onChange={toggleTodosEditor} className="cursor-pointer accent-blue-500" />
                       </th>
                       <th className="text-left px-4 py-2.5 text-slate-500 font-medium w-10">#</th>
                       <th className="text-left px-4 py-2.5 text-slate-500 font-medium">Canal</th>
@@ -478,28 +496,18 @@ export function AnalyzerForm({ onCheckResult }: Props) {
                   </thead>
                   <tbody>
                     {canalesFiltrados.map((canal, i) => (
-                      <tr
-                        key={i}
-                        onClick={() => toggleSelEditor(i)}
-                        className={`border-b border-white/5 cursor-pointer transition-colors ${editorSeleccionados.has(i) ? 'bg-blue-500/10' : 'hover:bg-white/5'}`}
-                      >
+                      <tr key={i} onClick={() => toggleSelEditor(i)}
+                        className={`border-b border-white/5 cursor-pointer transition-colors ${editorSeleccionados.has(i) ? 'bg-blue-500/10' : 'hover:bg-white/5'}`}>
                         <td className="px-3 py-2" onClick={e => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            checked={editorSeleccionados.has(i)}
-                            onChange={() => toggleSelEditor(i)}
-                            className="cursor-pointer accent-blue-500"
-                          />
+                          <input type="checkbox" checked={editorSeleccionados.has(i)} onChange={() => toggleSelEditor(i)}
+                            className="cursor-pointer accent-blue-500" />
                         </td>
                         <td className="px-4 py-2 text-slate-600 text-xs">{i + 1}</td>
                         <td className="px-4 py-2 text-white text-sm">{canal.nombre}</td>
                         <td className="px-4 py-2 text-slate-600 text-xs truncate max-w-xs hidden sm:table-cell">{canal.url}</td>
                         <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
-                          <button
-                            onClick={() => handleBorrarUno(i)}
-                            disabled={editorEliminandoIdx === i}
-                            className="p-1 text-slate-600 hover:text-red-400 hover:bg-red-400/10 rounded transition-all"
-                          >
+                          <button onClick={() => handleBorrarUno(i)} disabled={editorEliminandoIdx === i}
+                            className="p-1 text-slate-600 hover:text-red-400 hover:bg-red-400/10 rounded transition-all">
                             {editorEliminandoIdx === i ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />}
                           </button>
                         </td>
