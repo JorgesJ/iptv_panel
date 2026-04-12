@@ -374,8 +374,9 @@ export function AnalyzerForm({ onCheckResult }: Props) {
     a.click();
   };
 
-  const handleGuardarEnPanel = async () => {
-    if (editorCanales.length === 0) return;
+  const handleGuardarEnPanel = async (canalesAGuardar?: Canal[]) => {
+    const lista = canalesAGuardar ?? editorCanales;
+    if (lista.length === 0) return;
     setGuardando(true);
     setEditorMensaje('');
     try {
@@ -384,7 +385,7 @@ export function AnalyzerForm({ onCheckResult }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           nombre: nombreGuardar || editorNombre,
-          canales: editorCanales,
+          canales: lista,
           url: editorInfo?.url ?? '',
           max_conn: editorInfo?.max_conn ?? 0,
           caducidad: editorInfo?.caducidad ?? '',
@@ -396,12 +397,16 @@ export function AnalyzerForm({ onCheckResult }: Props) {
       if (!res.ok) throw new Error(data.detail || 'Error al guardar');
       setEditorMensaje(`✅ Lista "${data.nombre}" guardada con ${data.guardados} canales en el panel.`);
       setMostrandoModalNombre(false);
+      setMostrandoModalFiltrados(false);
     } catch (err: any) {
       setEditorMensaje(`⚠️ ${err.message}`);
     } finally {
       setGuardando(false);
     }
   };
+
+  const [mostrandoModalFiltrados, setMostrandoModalFiltrados] = useState(false);
+  const [nombreGuardarFiltrados, setNombreGuardarFiltrados] = useState('');
 
   // ─── InfoBadges reutilizable ──────────────────────────────────────────────
 
@@ -509,11 +514,26 @@ export function AnalyzerForm({ onCheckResult }: Props) {
                 <Download className="size-4" />
                 Descargar editado ({editorCanales.length})
               </button>
-              <button onClick={() => setMostrandoModalNombre(true)}
+              <button onClick={() => { setNombreGuardar(editorNombre); setMostrandoModalNombre(true); setMostrandoModalFiltrados(false); }}
                 className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white font-medium px-6 py-3 rounded-xl transition-all">
                 <Save className="size-4" />
                 Guardar en panel ({editorCanales.length})
               </button>
+              {editorBuscar.trim() && canalesFiltrados.length > 0 && canalesFiltrados.length < editorCanales.length && (
+                <button onClick={() => {
+                  let contenido = '#EXTM3U\n';
+                  for (const c of canalesFiltrados) contenido += c.extinf + '\n' + c.url + '\n';
+                  const blob = new Blob([contenido], { type: 'application/octet-stream' });
+                  const a = document.createElement('a');
+                  a.href = URL.createObjectURL(blob);
+                  a.download = `${editorNombre}_${editorBuscar.trim().replace(/[^a-zA-Z0-9]/g, '_')}.m3u`;
+                  a.click();
+                }}
+                  className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 text-white font-medium px-6 py-3 rounded-xl transition-all">
+                  <Download className="size-4" />
+                  Descargar filtrados ({canalesFiltrados.length})
+                </button>
+              )}
             </>
           )}
         </div>
@@ -531,7 +551,7 @@ export function AnalyzerForm({ onCheckResult }: Props) {
                 autoFocus
                 className="flex-1 bg-white/5 border border-white/20 rounded-xl px-4 py-2.5 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:border-green-400 transition-all"
               />
-              <button onClick={handleGuardarEnPanel} disabled={guardando || !nombreGuardar.trim()}
+              <button onClick={() => handleGuardarEnPanel()} disabled={guardando || !nombreGuardar.trim()}
                 className="flex items-center gap-2 bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white font-medium px-5 py-2.5 rounded-xl transition-all text-sm">
                 {guardando ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
                 {guardando ? 'Guardando...' : 'Confirmar'}
@@ -588,11 +608,27 @@ export function AnalyzerForm({ onCheckResult }: Props) {
                 className="flex-1 min-w-40 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-white text-sm placeholder:text-slate-600 focus:outline-none focus:border-blue-400" />
               <div className="flex gap-2 ml-auto flex-wrap">
                 {editorSeleccionados.size > 0 && (
-                  <button onClick={handleBorrarSeleccionados} disabled={editorEliminandoSel}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white rounded-lg text-xs font-medium transition-all">
-                    {editorEliminandoSel ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
-                    Eliminar {editorSeleccionados.size} seleccionados
-                  </button>
+                  <>
+                    <button onClick={() => {
+                      const canalesSeleccionados = Array.from(editorSeleccionados).map(i => canalesFiltrados[i]).filter(Boolean);
+                      let contenido = '#EXTM3U\n';
+                      for (const c of canalesSeleccionados) contenido += c.extinf + '\n' + c.url + '\n';
+                      const blob = new Blob([contenido], { type: 'application/octet-stream' });
+                      const a = document.createElement('a');
+                      a.href = URL.createObjectURL(blob);
+                      a.download = `${editorNombre}_seleccion.m3u`;
+                      a.click();
+                    }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-xs font-medium transition-all">
+                      <Download className="size-3.5" />
+                      Descargar {editorSeleccionados.size} seleccionados
+                    </button>
+                    <button onClick={handleBorrarSeleccionados} disabled={editorEliminandoSel}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white rounded-lg text-xs font-medium transition-all">
+                      {editorEliminandoSel ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+                      Eliminar {editorSeleccionados.size} seleccionados
+                    </button>
+                  </>
                 )}
                 <button onClick={handleMantenerES} disabled={editorFiltrando}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-500 disabled:opacity-40 text-white rounded-lg text-xs font-medium transition-all">
