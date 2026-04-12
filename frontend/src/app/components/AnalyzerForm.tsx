@@ -190,9 +190,12 @@ export function AnalyzerForm({ onCheckResult }: Props) {
     }
   };
 
-  const canalesFiltrados = editorCanales.filter(c =>
-    !editorBuscar || c.nombre.toLowerCase().includes(editorBuscar.toLowerCase())
-  );
+  const canalesFiltrados = editorCanales.filter(c => {
+    if (!editorBuscar.trim()) return true;
+    const terminos = editorBuscar.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+    const nombre = c.nombre.toLowerCase();
+    return terminos.some(t => nombre.includes(t));
+  });
 
   const toggleSelEditor = (idx: number) => {
     lastSelectedIdx.current = idx;
@@ -603,8 +606,8 @@ export function AnalyzerForm({ onCheckResult }: Props) {
             <div className="flex items-center gap-2 mb-3 flex-wrap">
               <span className="text-slate-400 text-sm">{canalesFiltrados.length} canales</span>
               <input type="text" value={editorBuscar}
-                onChange={(e) => { setEditorBuscar(e.target.value); setEditorSeleccionados(new Set()); }}
-                placeholder="Buscar canal..."
+                onChange={(e) => { setEditorBuscar(e.target.value); }}
+                placeholder="Buscar canal... (varios filtros: RUS:, PT:, AR:)"
                 className="flex-1 min-w-40 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-white text-sm placeholder:text-slate-600 focus:outline-none focus:border-blue-400" />
               <div className="flex gap-2 ml-auto flex-wrap">
                 {editorSeleccionados.size > 0 && (
