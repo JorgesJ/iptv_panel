@@ -337,7 +337,16 @@ def limpiar_urls_verificadas():
     return JSONResponse({"ok": True})
 
 
-@app.post("/urls/verificadas/importar")
+@app.delete("/urls/verificadas/eliminar")
+def eliminar_url_verificada(url: str = Form(...)):
+    """Elimina una URL específica de urls_verificadas.json"""
+    verificadas = cargar_urls_verificadas()
+    nuevas = [v for v in verificadas if v["url"] != url]
+    guardar_urls_verificadas(nuevas)
+    return JSONResponse({"ok": True, "eliminadas": len(verificadas) - len(nuevas)})
+
+
+
 async def importar_json_verificadas(archivo: UploadFile = File(...)):
     """Importa un JSON de urls_verificadas externo (ej: generado en Android)
     y lo fusiona con el local sin duplicados."""

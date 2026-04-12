@@ -40,6 +40,7 @@ export function ScannedUrls({ onSaveComplete }: Props) {
   const [guardando, setGuardando] = useState<string | null>(null);
   const [guardandoTodas, setGuardandoTodas] = useState(false);
   const [eliminando, setEliminando] = useState<string | null>(null);
+  const [eliminandoVerificada, setEliminandoVerificada] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [importando, setImportando] = useState(false);
   const [importResult, setImportResult] = useState('');
@@ -385,6 +386,26 @@ export function ScannedUrls({ onSaveComplete }: Props) {
     }
   };
 
+  const handleEliminarVerificada = async (url: string) => {
+    if (!confirm('¿Eliminar esta URL de la lista verificadas?')) return;
+    setEliminandoVerificada(url);
+    try {
+      const form = new FormData();
+      form.append('url', url);
+      await fetch('http://localhost:8000/urls/verificadas/eliminar', { method: 'DELETE', body: form });
+      setUrlsVerificadas(prev => prev.filter(u => u.url !== url));
+      if (resultados) {
+        const nuevo = { ...resultados, con: resultados.con.filter(r => r.url !== url) };
+        setResultados(nuevo);
+        resultadosPersistidos = nuevo;
+      }
+    } catch {
+      setError('Error al eliminar la URL verificada');
+    } finally {
+      setEliminandoVerificada(null);
+    }
+  };
+
   const limpiarNombre = (portal: string, url: string): string => {
     const base = portal || url;
     const dominio = base.replace(/https?:\/\//, '').replace(/:\d+.*/, '').replace(/[\\/*?:"<>|]/g, '_').trim();
@@ -668,9 +689,18 @@ export function ScannedUrls({ onSaveComplete }: Props) {
                             <p className="text-white font-semibold">{nombre}</p>
                             <p className="text-slate-500 text-xs mt-0.5 truncate">{resultado.url}</p>
                           </div>
-                          <span className="bg-green-500/20 text-green-400 text-xs px-2.5 py-1 rounded-full ml-3 shrink-0">
-                            {resultado.encontrados} canales
-                          </span>
+                          <div className="flex items-center gap-2 ml-3 shrink-0">
+                            <span className="bg-green-500/20 text-green-400 text-xs px-2.5 py-1 rounded-full">
+                              {resultado.encontrados} canales
+                            </span>
+                            <button
+                              onClick={() => handleEliminarVerificada(resultado.url)}
+                              disabled={eliminandoVerificada === resultado.url}
+                              title="Eliminar de verificadas"
+                              className="p-1.5 text-slate-600 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all">
+                              {eliminandoVerificada === resultado.url ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+                            </button>
+                          </div>
                         </div>
                         <div className="flex flex-wrap gap-2 mb-3">
                           <span className="flex items-center gap-1.5 text-yellow-300 text-xs bg-yellow-500/10 px-2.5 py-1 rounded-full">

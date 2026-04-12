@@ -943,6 +943,193 @@ async def importar_txt():
     print(f"  🗑️  {URLS_TXT_FILE} limpiado (ya procesadas)")
     input("\n  Pulsa Enter para continuar...")
 
+# ─── Opción R: Re-verificar historial ────────────────────────────────────────
+
+async def reverificar_historial():
+    print("\n  🔄 Re-verificar historial de escaneos")
+    print("  ─────────────────────────────────────────────────────────────")
+
+    # Buscar solo TXTs de URLs (global_*.txt y foro_ping_*.txt), excluir logs
+    if not os.path.exists(SCAN_HISTORY_FOLDER):
+        print(f"  ❌ No existe la carpeta {SCAN_HISTORY_FOLDER}")
+        input("\n  Pulsa Enter para continuar...")
+        return
+
+    txts = sorted([
+        os.path.join(SCAN_HISTORY_FOLDER, f)
+        for f in os.listdir(SCAN_HISTORY_FOLDER)
+        if f.endswith('.txt') and (f.startswith('global_') or f.startswith('foro_ping_'))
+    ])
+
+    if not txts:
+        print(f"  ❌ No se encontraron TXTs de historial en {SCAN_HISTORY_FOLDER}")
+        input("\n  Pulsa Enter para continuar...")
+        return
+
+    # Submenú de selección
+    while True:
+        print(f"\n  📂 TXTs de historial encontrados ({len(txts)}):")
+        for i, f in enumerate(txts):
+            nombre = os.path.basename(f)
+            tam = os.path.getsize(f)
+            print(f"    [{i+1:>2}] {nombre}  ({tam//1024} KB)")
+        print()
+        print("   [T] Re-verificar TODOS")
+        print("   [S] Seleccionar archivos")
+        print("   [X] Volver")
+        print()
+
+        try:
+            opcion = input("  Elige: ").strip().upper()
+        except KeyboardInterrupt:
+            return
+
+        if opcion == 'X':
+            return
+
+        rutas_seleccionadas = []
+
+        if opcion == 'T':
+            rutas_seleccionadas = txts
+        elif opcion == 'S':
+            print("\n  💡 Selección: ej. 1,3,5 o 1-4")
+            try:
+                sel = input("  Elige archivo(s): ").strip()
+                if sel.upper() == 'X':
+                    continue
+                indices = set()
+                for parte in sel.split(','):
+                    parte = parte.strip()
+                    if '-' in parte:
+                        try:
+                            inicio, fin = parte.split('-')
+                            for n in range(int(inicio), int(fin)+1):
+                                if 1 <= n <= len(txts):
+                                    indices.add(n)
+                        except ValueError:
+                            pass
+                    else:
+                        try:
+                            n = int(parte)
+                            if 1 <= n <= len(txts):
+                                indices.add(n)
+                        except ValueError:
+                            pass
+                rutas_seleccionadas = [txts[i-1] for i in sorted(indices)]
+                if not rutas_seleccionadas:
+                    print("  ❌ Selección no válida")
+                    continue
+            except KeyboardInterrupt:
+                return
+        else:
+            print("  ❌ Opción no válida")
+            continue
+
+        # Leer y acumular URLs de los archivos seleccionados
+        print(f"\n  📂 Leyendo {len(rutas_seleccionadas)} archivo(s)...")
+        todas = []
+        vistas = set()
+
+        url_pattern = re.compile(
+            r'https?://[^\s]*get\.php\?[^\s]*type=m3u[^\s]*',
+            re.IGNORECASE
+        )
+
+        for ruta in rutas_seleccionadas:
+            try:
+                raw = open(ruta, 'rb').read()
+                if raw.startswith(b'\xff\xfe'):
+                    texto = raw.decode('utf-16-le', errors='ignore')
+                elif raw.startswith(b'\xfe\xff'):
+                    texto = raw.decode('utf-16-be', errors='ignore')
+                elif raw.startswith(b'\xef\xbb\xbf'):
+                    texto = raw.decode('utf-8-sig', errors='ignore')
+                else:
+                    texto = raw.decode('utf-8', errors='ignore')
+
+                for linea in texto.splitlines():
+                    linea = linea.strip()
+                    match = url_pattern.search(linea)
+                    if not match:
+                        continue
+                    url = re.sub(r'&output=[^\s&]+', '', match.group(0).rstrip('&'))
+                    if url not in vistas:
+                        vistas.add(url)
+                        todas.append({'url_m3u': url, 'portal': '', 'caducidad': '', 'max_conn': 1, 'observaciones': ''})
+                print(f"  ✅ {os.path.basename(ruta)}: {len(vistas)} URLs acumuladas")
+            except Exception as e:
+                print(f"  ⚠️  Error leyendo {ruta}: {e}")
+
+        if not todas:
+            print("  ❌ No se encontraron URLs en los archivos seleccionados")
+            input("\n  Pulsa Enter para continuar...")
+            continue
+
+        print(f"\n  📋 {len(todas)} URLs únicas extraídas del historial")
+        print("  ⚡ Comprobando disponibilidad y consultando APIs...")
+
+        # Ping + consulta API (igual que importar_txt)
+        sem = asyncio.Semaphore(20)
+        connector = aiohttp.TCPConnector(ssl=False)
+        disponibles = []
+        completadas_ping = 0
+        ok_ping = 0
+        total_ping = len(todas)
+
+        async def ping_historial(session, datos, sem):
+            nonlocal completadas_ping, ok_ping
+            async with sem:
+                url = datos['url_m3u']
+                t0 = time.time()
+                resultado = None
+                try:
+                    async with session.head(url, timeout=aiohttp.ClientTimeout(total=6), allow_redirects=True) as r:
+                        ping = round((time.time() - t0) * 1000)
+                        if r.status in (200, 206) and ping <= MAX_PING:
+                            info = await obtener_info_cuenta(session, url)
+                            resultado = {
+                                'url': url,
+                                'portal': info.get('portal', ''),
+                                'caducidad': info.get('caducidad', datos.get('caducidad', '')),
+                                'max_conn': info.get('max_conn', datos.get('max_conn', 1)),
+                                'observaciones': info.get('observaciones', ''),
+                                'ping': ping,
+                                'fecha_verificacion': datetime.now().isoformat(timespec='seconds'),
+                                'pct_streams': 0,
+                                'total_canales': 0,
+                            }
+                except Exception:
+                    pass
+                completadas_ping += 1
+                if resultado:
+                    ok_ping += 1
+                pct = round(completadas_ping / total_ping * 100)
+                barra = '█' * (pct // 5) + '░' * (20 - pct // 5)
+                fallos = completadas_ping - ok_ping
+                print(f"\r  [{barra}] {pct}% | ✅ {ok_ping} OK | ❌ {fallos} desc. | {completadas_ping}/{total_ping}", end='', flush=True)
+                return resultado
+
+        async with aiohttp.ClientSession(connector=connector) as session:
+            tareas = [ping_historial(session, d, sem) for d in todas]
+            resultados = await asyncio.gather(*tareas)
+
+        disponibles = [r for r in resultados if r]
+        print(f"\n  ✅ {len(disponibles)} URLs responden al ping")
+
+        if not disponibles:
+            print("  ⚠️  Ninguna URL respondió. Puede que tu IP esté bloqueada.")
+            print("  💡 Prueba desde el VPS para mejores resultados.")
+            input("\n  Pulsa Enter para continuar...")
+            continue
+
+        # Verificar streams
+        min_c, min_p, min_conn, acumular = pedir_opciones(filtro_espana=True)
+        await escanear_y_verificar(disponibles, min_c, min_p, acumular, filtro_espana=True, min_conn=min_conn)
+
+        input("\n  Pulsa Enter para continuar...")
+        return
+
+
 # ─── Opción 3: Ver resumen de URLs verificadas ────────────────────────────────
 
 def ver_verificadas():
@@ -1534,6 +1721,7 @@ def mostrar_menu():
     print("   [5] Buscar en GitHub")
     print("   [6] Escanear foro LinuxSat")
     print("   [T] Todas las fuentes (Telegram + GitHub + Foro)")
+    print("   [R] Re-verificar historial de escaneos")
     print()
     print("   [0] Salir")
     print()
@@ -1565,6 +1753,8 @@ async def main():
             await escanear_telegram()
             await buscar_github()
             await escanear_foro()
+        elif opcion.upper() == 'R':
+            await reverificar_historial()
         elif opcion == '0':
             print("\n  Hasta luego!")
             break
@@ -1573,13 +1763,27 @@ async def main():
             time.sleep(1)
 
 if __name__ == "__main__":
-    # Evitar que Windows suspenda el proceso durante escaneos largos
     import ctypes
     try:
+        # ─── Desactivar QuickEdit mode de Windows ─────────────────────────────
+        # QuickEdit pausa el script cuando se hace clic en la ventana CMD.
+        # Lo desactivamos para que el script no se congele al cambiar de ventana.
+        kernel32 = ctypes.windll.kernel32
+        # Obtener handle de la consola
+        handle = kernel32.GetStdHandle(-10)  # STD_INPUT_HANDLE
+        # Leer modo actual
+        mode = ctypes.c_ulong()
+        kernel32.GetConsoleMode(handle, ctypes.byref(mode))
+        # ENABLE_QUICK_EDIT_MODE = 0x0040, ENABLE_EXTENDED_FLAGS = 0x0080
+        # Quitar QuickEdit (bit 0x0040), mantener el resto
+        nuevo_modo = (mode.value & ~0x0040) | 0x0080
+        kernel32.SetConsoleMode(handle, nuevo_modo)
+
+        # ─── Evitar que Windows suspenda el proceso durante escaneos largos ───
         ES_CONTINUOUS       = 0x80000000
         ES_SYSTEM_REQUIRED  = 0x00000001
         ES_DISPLAY_REQUIRED = 0x00000002
-        ctypes.windll.kernel32.SetThreadExecutionState(
+        kernel32.SetThreadExecutionState(
             ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
         )
     except Exception:
