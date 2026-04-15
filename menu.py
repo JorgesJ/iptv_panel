@@ -1392,6 +1392,13 @@ async def buscar_github(automatico=False):
         return
 
     # Opciones para las URLs encontradas en GitHub
+    if automatico:
+        print(f"\n  ⚡ Modo automático — verificando las {len(disponibles)} URLs de GitHub...")
+        min_c, min_p, min_conn, acumular = pedir_opciones(filtro_espana=False, automatico=True)
+        disponibles_norm = [{**d, 'url': d.get('url', d.get('url_m3u', ''))} for d in disponibles]
+        await escanear_y_verificar(disponibles_norm, min_c, min_p, acumular, filtro_espana=False, min_conn=min_conn)
+        return
+
     print(f"\n  ¿Qué quieres hacer con las {len(disponibles)} URLs?")
     print("  [1] Verificar streams y guardar en urls_verificadas.json")
     print("  [0] Volver al menú principal")
