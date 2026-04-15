@@ -514,7 +514,21 @@ async def escanear_y_verificar(urls_entrada, min_canales, min_pct, acumular=Fals
 
 # ─── Opciones del menú ────────────────────────────────────────────────────────
 
-def pedir_opciones(filtro_espana=True):
+# Valores por defecto para modo automático (opción T - Todas las fuentes)
+AUTO_MIN_CANALES  = 10
+AUTO_MIN_STREAMS  = 75
+AUTO_MIN_CONN     = 3
+AUTO_ACUMULAR     = True
+
+def pedir_opciones(filtro_espana=True, automatico=False):
+    if automatico:
+        print(f"\n  ⚡ Modo automático — usando valores por defecto:")
+        print(f"     Mínimo canales: {AUTO_MIN_CANALES}")
+        print(f"     Mínimo streams: {AUTO_MIN_STREAMS}%")
+        print(f"     Mínimo MaxConn: {AUTO_MIN_CONN}")
+        print(f"     Acumular JSON:  {'Sí' if AUTO_ACUMULAR else 'No'}")
+        return AUTO_MIN_CANALES, AUTO_MIN_STREAMS, AUTO_MIN_CONN, AUTO_ACUMULAR
+
     print("\n  Opciones de verificación:")
     try:
         if filtro_espana:
@@ -543,7 +557,7 @@ CANALES = [
 
 # ─── Opción 1: Escanear Telegram ──────────────────────────────────────────────
 
-async def escanear_telegram():
+async def escanear_telegram(automatico=False):
     try:
         from telethon import TelegramClient
         from telethon.tl.functions.channels import JoinChannelRequest
@@ -743,10 +757,13 @@ async def escanear_telegram():
     print(f"  📋 Log guardado: {ruta_log}")
     # ─────────────────────────────────────────────────────────────────────────
 
-    min_c, min_p, min_conn, acumular = pedir_opciones(filtro_espana=True)
+    min_c, min_p, min_conn, acumular = pedir_opciones(filtro_espana=True, automatico=automatico)
     await escanear_y_verificar(disponibles, min_c, min_p, acumular, filtro_espana=True, min_conn=min_conn)
 
-    input("\n  Pulsa Enter para continuar...")
+    if not automatico:
+        input("\n  Pulsa Enter para continuar...")
+
+
 
 
 # ─── Opción 2: Importar TXT ───────────────────────────────────────────────────
@@ -1181,7 +1198,7 @@ def limpiar_verificadas():
 
 # ─── Opción 5: Buscar en GitHub ──────────────────────────────────────────────
 
-async def buscar_github():
+async def buscar_github(automatico=False):
     print("\n  🐙 Buscar URLs M3U en GitHub")
     print("  Busca repositorios y archivos con URLs type=m3u_plus, type=m3u y streams .ts directos.")
     print()
@@ -1432,7 +1449,7 @@ def extraer_canales_espana_m3u(contenido_bytes, nombre_origen):
 
 # ─── Opción 6: Escanear foro LinuxSat ────────────────────────────────────────
 
-async def escanear_foro():
+async def escanear_foro(automatico=False):
     import requests as req
     from bs4 import BeautifulSoup
     import zipfile as zf
@@ -1697,9 +1714,10 @@ async def escanear_foro():
     print(f"  💾 TXT con {len(disponibles)} URLs guardado: {ruta_ping_txt}")
 
     # Verificar streams
-    min_c, min_p, min_conn, acumular = pedir_opciones(filtro_espana=True)
+    min_c, min_p, min_conn, acumular = pedir_opciones(filtro_espana=True, automatico=automatico)
     await escanear_y_verificar(disponibles, min_c, min_p, acumular, filtro_espana=True, min_conn=min_conn)
-    input("\n  Pulsa Enter para continuar...")
+    if not automatico:
+        input("\n  Pulsa Enter para continuar...")
 
 # ─── Menú principal ───────────────────────────────────────────────────────────
 
@@ -1749,10 +1767,12 @@ async def main():
         elif opcion == '6':
             await escanear_foro()
         elif opcion.upper() == 'T':
-            print("\n  🔄 Escaneando todas las fuentes...")
-            await escanear_telegram()
-            await buscar_github()
-            await escanear_foro()
+            print("\n  🔄 Escaneando todas las fuentes en modo automático...")
+            print(f"  ⚡ Valores: canales≥{AUTO_MIN_CANALES} | streams≥{AUTO_MIN_STREAMS}% | MaxConn≥{AUTO_MIN_CONN} | acumular=Sí")
+            await escanear_telegram(automatico=True)
+            await buscar_github(automatico=True)
+            await escanear_foro(automatico=True)
+            print("\n  ✅ Escaneo completo de todas las fuentes finalizado.")
         elif opcion.upper() == 'R':
             await reverificar_historial()
         elif opcion == '0':
