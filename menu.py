@@ -62,6 +62,14 @@ MPEG_TS_SYNC = b'\x47'
 HLS_HEADER   = b'#EXTM3U'
 MAC_PATTERN  = re.compile(r'/([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}/')
 
+def normalizar_url_m3u(url: str) -> str:
+    """Normaliza una URL M3U: quita &output=..., convierte type=m3u_plus a type=m3u."""
+    url = re.sub(r'&output=[^\s&]+', '', url).rstrip('&')
+    url = re.sub(r'type=m3u_plus', 'type=m3u', url, flags=re.IGNORECASE)
+    url = re.sub(r'type=m3u8', 'type=m3u', url, flags=re.IGNORECASE)
+    return url
+
+
 # Token GitHub — leído desde .env
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 
@@ -216,11 +224,19 @@ def parsear_bloque_telegram(texto_original):
         datos['observaciones'] = status.group(1).strip()
     m3u = re.search(r'M3U\s*[:\-]\s*(https?://\S+)', texto, re.IGNORECASE)
     if m3u:
-        datos['url_m3u'] = re.sub(r'\s+', '', m3u.group(1))
+        url_raw = re.sub(r'\s+', '', m3u.group(1))
+        url_raw = re.sub(r'&output=[^\s&]+', '', url_raw).rstrip('&')
+        url_raw = re.sub(r'type=m3u_plus', 'type=m3u', url_raw, flags=re.IGNORECASE)
+        url_raw = re.sub(r'type=m3u8', 'type=m3u', url_raw, flags=re.IGNORECASE)
+        datos['url_m3u'] = url_raw
     else:
         m3u2 = re.search(r'(https?://\S+type=m3u\S*)', texto_original, re.IGNORECASE)
         if m3u2:
-            datos['url_m3u'] = re.sub(r'\s+', '', m3u2.group(1))
+            url_raw = re.sub(r'\s+', '', m3u2.group(1))
+            url_raw = re.sub(r'&output=[^\s&]+', '', url_raw).rstrip('&')
+            url_raw = re.sub(r'type=m3u_plus', 'type=m3u', url_raw, flags=re.IGNORECASE)
+            url_raw = re.sub(r'type=m3u8', 'type=m3u', url_raw, flags=re.IGNORECASE)
+            datos['url_m3u'] = url_raw
     return datos
 
 # ─── Verificación de streams ──────────────────────────────────────────────────
@@ -872,7 +888,7 @@ async def importar_txt():
                 if not match:
                     continue
                 url = match.group(0).rstrip('&')
-                url_base = re.sub(r'&output=[^\s&]+', '', url)
+                url_base = normalizar_url_m3u(url)
                 if url_base in vistas:
                     continue
                 vistas.add(url_base)
@@ -1226,7 +1242,7 @@ async def buscar_github(automatico=False):
         encontradas = []
         for match in url_pattern.finditer(texto):
             url = match.group(0).rstrip('&,;\'\"')
-            url_base = re.sub(r'&output=[^\s&]+', '', url)
+            url_base = normalizar_url_m3u(url)
             if url_base not in vistas:
                 vistas.add(url_base)
                 encontradas.append(url_base)
@@ -1592,7 +1608,7 @@ async def escanear_foro(automatico=False):
                     texto_hilo = r_hilo.text
                     for match in url_pattern.finditer(texto_hilo):
                         url = match.group(0).rstrip('&,;\'"')
-                        url_base = re.sub(r'&output=[^\s&]+', '', url)
+                        url_base = normalizar_url_m3u(url)
                         if url_base not in vistas:
                             vistas.add(url_base)
                             todas.append({'url_m3u': url_base, 'portal': '', 'caducidad': '', 'max_conn': 1, 'observaciones': 'LinuxSat'})
@@ -1617,7 +1633,7 @@ async def escanear_foro(automatico=False):
                                                     texto_zip = z.read(nombre_zip).decode("utf-8", errors="ignore")
                                                     for match in url_pattern.finditer(texto_zip):
                                                         url = match.group(0).rstrip('&,;\'"')
-                                                        url_base = re.sub(r'&output=[^\s&]+', '', url)
+                                                        url_base = normalizar_url_m3u(url)
                                                         if url_base not in vistas:
                                                             vistas.add(url_base)
                                                             todas.append({'url_m3u': url_base, 'portal': '', 'caducidad': '', 'max_conn': 1, 'observaciones': 'LinuxSat-adjunto'})
@@ -1634,7 +1650,7 @@ async def escanear_foro(automatico=False):
                                         else:
                                             for match in url_pattern.finditer(texto_adj):
                                                 url = match.group(0).rstrip('&,;\'"')
-                                                url_base = re.sub(r'&output=[^\s&]+', '', url)
+                                                url_base = normalizar_url_m3u(url)
                                                 if url_base not in vistas:
                                                     vistas.add(url_base)
                                                     todas.append({'url_m3u': url_base, 'portal': '', 'caducidad': '', 'max_conn': 1, 'observaciones': 'LinuxSat-adjunto'})
