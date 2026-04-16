@@ -100,16 +100,30 @@ def normalizar(texto):
         if unicodedata.category(c) != 'Mn'
     )
 
-def tiene_espana(nombre):
+def tiene_espana(nombre, extinf=''):
     n = normalizar(nombre)
+    e = normalizar(extinf)
 
-    # Prefijos de país españoles
+    # Prefijos de país españoles en el nombre
     if n.startswith('ES:') or n.startswith('ES ') or n.startswith('ES|'):
         return True
     if n.startswith('(ES)') or n.startswith('[ES]'):
         return True
     if 'ESPANA' in n or 'SPAIN' in n:
         return True
+    # Formato → ESPAÑA | canal ←
+    if 'ESPANA' in n or '| ES ' in n or '|ES ' in n:
+        return True
+
+    # Buscar en el group-title del EXTINF: group-title="ESPAÑA"
+    if 'ESPANA' in e or 'SPAIN' in e:
+        return True
+    # group-title con ES explícito
+    gt_match = re.search(r'group-title="([^"]*)"', extinf, re.IGNORECASE)
+    if gt_match:
+        gt = normalizar(gt_match.group(1))
+        if 'ESPANA' in gt or 'SPAIN' in gt or gt.startswith('ES') or 'ESPANOL' in gt:
+            return True
 
     # Quitar calificadores de calidad al inicio: (FHD), (HD), (SD), (FHD REPUESTO), etc.
     n_limpio = re.sub(r'^\([^)]*\)\s*', '', n).strip()
@@ -171,7 +185,7 @@ def parsear_m3u(texto, filtro_espana=True):
             continue
         if MAC_PATTERN.search(url):
             continue
-        if filtro_espana and not tiene_espana(nombre):
+        if filtro_espana and not tiene_espana(nombre, linea):
             continue
         canales.append({'nombre': nombre, 'url': url, 'extinf': linea})
     return canales
