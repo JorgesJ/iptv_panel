@@ -301,6 +301,18 @@ def detectar_tipo_lista(url):
 async def verificar_stream(session, url, sem):
     async with sem:
         try:
+            # Primero HEAD rápido
+            async with session.head(
+                url, headers=HEADERS_VLC,
+                timeout=aiohttp.ClientTimeout(connect=10, total=10),
+                allow_redirects=True
+            ) as r:
+                if r.status in (200, 206):
+                    return True
+        except Exception:
+            pass
+        # Si HEAD falla, intentar GET con lectura mínima
+        try:
             async with session.get(
                 url,
                 headers=HEADERS_VLC,
@@ -308,19 +320,18 @@ async def verificar_stream(session, url, sem):
             ) as r:
                 if r.status not in (200, 206):
                     return False
-                # Leer hasta BYTES_A_LEER bytes
                 chunk = await asyncio.wait_for(r.content.read(BYTES_A_LEER), timeout=15)
-                if not chunk or len(chunk) < 188:
+                if not chunk or len(chunk) < 100:
                     return False
                 # Validar estructura real del stream
                 if chunk[0:1] == MPEG_TS_SYNC:
                     return validar_mpegts(chunk)
                 if chunk[:7] == HLS_HEADER:
                     return validar_hls(chunk)
-                # Si empieza por 0x47 pero no en el primer byte, buscar sync
                 if b'\x47' in chunk[:200]:
                     return validar_mpegts(chunk)
-                return False
+                # Si llega aquí con datos, aceptar como válido
+                return True
         except Exception:
             return False
 
