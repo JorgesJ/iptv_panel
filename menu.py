@@ -34,10 +34,10 @@ M3U_FOLDER          = "listas_m3u"
 SCAN_HISTORY_FOLDER = "scan_history"
 
 # ─── Configuración ────────────────────────────────────────────────────────────
-TIMEOUT_LISTA       = 20
-TIMEOUT_STREAM      = 15
-MAX_PAR_LISTAS      = 8
-MAX_PAR_STREAMS     = 20  # Reducido para no saturar servidores
+TIMEOUT_LISTA       = 60
+TIMEOUT_STREAM      = 20
+MAX_PAR_LISTAS      = 4
+MAX_PAR_STREAMS     = 10  # Reducido para no saturar servidores
 MIN_PCT_STREAMS     = 75
 MIN_CANALES         = 10
 BYTES_A_LEER        = 32768  # 32KB — suficiente para verificar patrón MPEG-TS real
@@ -304,12 +304,12 @@ async def verificar_stream(session, url, sem):
             async with session.get(
                 url,
                 headers=HEADERS_VLC,
-                timeout=aiohttp.ClientTimeout(connect=4, total=TIMEOUT_STREAM)
+                timeout=aiohttp.ClientTimeout(connect=10, total=TIMEOUT_STREAM)
             ) as r:
                 if r.status not in (200, 206):
                     return False
                 # Leer hasta BYTES_A_LEER bytes
-                chunk = await asyncio.wait_for(r.content.read(BYTES_A_LEER), timeout=8)
+                chunk = await asyncio.wait_for(r.content.read(BYTES_A_LEER), timeout=15)
                 if not chunk or len(chunk) < 188:
                     return False
                 # Validar estructura real del stream
