@@ -34,14 +34,14 @@ M3U_FOLDER          = "listas_m3u"
 SCAN_HISTORY_FOLDER = "scan_history"
 
 # ─── Configuración ────────────────────────────────────────────────────────────
-TIMEOUT_LISTA       = 12
-TIMEOUT_STREAM      = 10
+TIMEOUT_LISTA       = 20
+TIMEOUT_STREAM      = 15
 MAX_PAR_LISTAS      = 8
 MAX_PAR_STREAMS     = 20  # Reducido para no saturar servidores
 MIN_PCT_STREAMS     = 75
 MIN_CANALES         = 10
 BYTES_A_LEER        = 32768  # 32KB — suficiente para verificar patrón MPEG-TS real
-MAX_PING            = 1000
+MAX_PING            = 6000
 
 # Headers que simulan VLC — detecta servidores que bloquean VLC específicamente
 HEADERS_VLC = {
