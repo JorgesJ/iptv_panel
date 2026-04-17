@@ -594,6 +594,7 @@ CANALES = [
     {"id": 6, "username": "Xtream_Iptv_Code", "nombre": "Xtream IPTV Codes",     "privado": False, "topic_id": None},
     {"id": 7, "username": "canalestvspain",   "nombre": "Canales TV Spain",       "privado": False, "topic_id": None},
     {"id": 8, "username": "tvpelisflixhd_plus","nombre": "TVPELISFLIXHD Plus",   "privado": False, "topic_id": None},
+    {"id": 9, "username": "https://t.me/+qhqptj4NiDcwNjky", "nombre": "Canal Privado RATTENPAPST", "privado": True, "topic_id": None},
 ]
 
 # ─── Opción 1: Escanear Telegram ──────────────────────────────────────────────
@@ -649,14 +650,21 @@ async def escanear_telegram(automatico=False):
                     except Exception:
                         pass
                     async for msg in client.iter_messages(entidad, limit=5000):
-                        if not msg.text or msg.reply_to is None:
+                        if not msg.text:
                             continue
-                        topic_id = getattr(msg.reply_to, 'reply_to_top_id', None) or getattr(msg.reply_to, 'reply_to_msg_id', None)
-                        if topic_id != canal['topic_id']:
+                        # Si tiene topic_id configurado, filtrar por topic
+                        if canal['topic_id'] is not None:
+                            if msg.reply_to is None:
+                                continue
+                            t_id = getattr(msg.reply_to, 'reply_to_top_id', None) or getattr(msg.reply_to, 'reply_to_msg_id', None)
+                            if t_id != canal['topic_id']:
+                                continue
+                        # Sin topic_id → leer todos los mensajes que tengan URLs
+                        if 'get.php' not in msg.text.lower():
                             continue
                         leidos += 1
                         for match in url_pattern.finditer(msg.text):
-                            url = re.sub(r'&output=[^\s&]+', '', match.group(0).rstrip('&'))
+                            url = normalizar_url_m3u(match.group(0).rstrip('&'))
                             if url not in vistas:
                                 vistas.add(url)
                                 todas.append({'url_m3u': url, 'portal': '', 'caducidad': '', 'max_conn': 1, 'observaciones': ''})
