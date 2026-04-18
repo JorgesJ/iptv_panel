@@ -347,6 +347,7 @@ def eliminar_url_verificada(url: str = Form(...)):
 
 
 
+@app.post("/urls/verificadas/importar")
 async def importar_json_verificadas(archivo: UploadFile = File(...)):
     """Importa un JSON de urls_verificadas externo (ej: generado en Android)
     y lo fusiona con el local sin duplicados."""
