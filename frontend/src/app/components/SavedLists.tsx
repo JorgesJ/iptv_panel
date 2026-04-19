@@ -36,6 +36,7 @@ export function SavedLists() {
 
   // Ver/editar canales
   const [actualizando, setActualizando] = useState<string | null>(null);
+  const [viendoCanales, setViendoCanales] = useState<string | null>(null);
   const [canales, setCanales] = useState<Canal[]>([]);
   const [loadingCanales, setLoadingCanales] = useState(false);
   const [buscarCanal, setBuscarCanal] = useState('');
