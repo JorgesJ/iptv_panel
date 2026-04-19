@@ -34,10 +34,10 @@ M3U_FOLDER          = "listas_m3u"
 SCAN_HISTORY_FOLDER = "scan_history"
 
 # ─── Configuración ────────────────────────────────────────────────────────────
-TIMEOUT_LISTA       = 60
-TIMEOUT_STREAM      = 20
-MAX_PAR_LISTAS      = 4
-MAX_PAR_STREAMS     = 10  # Reducido para no saturar servidores
+TIMEOUT_LISTA       = 30
+TIMEOUT_STREAM      = 15
+MAX_PAR_LISTAS      = 8
+MAX_PAR_STREAMS     = 15  # Reducido para no saturar servidores
 MIN_PCT_STREAMS     = 75
 MIN_CANALES         = 10
 BYTES_A_LEER        = 32768  # 32KB — suficiente para verificar patrón MPEG-TS real

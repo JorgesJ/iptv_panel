@@ -557,13 +557,32 @@ def guardar_desde_scan(
             r = req.get(url, headers=headers, timeout=15)
             r.raise_for_status()
             todos = parsear_m3u(r.text)
-            # Intentar filtrar por ES: primero
-            canales_es = [c for c in todos if
-                c['nombre'].upper().startswith('ES:') or
-                c['nombre'].upper().startswith('ES ') or
-                'ESPAÑA' in c['nombre'].upper() or
-                'ESPANA' in c['nombre'].upper()
-            ]
+            # Filtrar canales españoles con todos los patrones conocidos
+            def es_canal_espanol(c):
+                n = c['nombre'].upper()
+                # Quitar acentos
+                import unicodedata
+                n = ''.join(ch for ch in unicodedata.normalize('NFD', n) if unicodedata.category(ch) != 'Mn')
+                e = c.get('extinf', '').upper()
+                e = ''.join(ch for ch in unicodedata.normalize('NFD', e) if unicodedata.category(ch) != 'Mn')
+                if n.startswith('ES:') or n.startswith('ES ') or n.startswith('ES|'): return True
+                if n.startswith('(ES)') or n.startswith('[ES]'): return True
+                if n.startswith('ESP:') or n.startswith('ESP '): return True
+                if '|ES|' in n: return True
+                if 'ESPANA' in n or 'SPAIN' in n: return True
+                if '| ES ' in n or '|ES ' in n: return True
+                if 'ESPANA' in e or 'SPAIN' in e: return True
+                # group-title en extinf
+                import re as _re
+                gt = _re.search(r'group-title="([^"]*)"', c.get('extinf',''), _re.IGNORECASE)
+                if gt:
+                    g = ''.join(ch for ch in unicodedata.normalize('NFD', gt.group(1).upper()) if unicodedata.category(ch) != 'Mn')
+                    if 'ESPANA' in g or 'SPAIN' in g or g.startswith('ES'): return True
+                # Canales Movistar y DAZN
+                n2 = _re.sub(r'^\([^)]*\)\s*', '', n).strip()
+                if n2.startswith('M+') or n2.startswith('M.') or n2.startswith('DAZN'): return True
+                return False
+            canales_es = [c for c in todos if es_canal_espanol(c)]
             canales = canales_es if canales_es else todos
         except Exception:
             # Si no se puede descargar (servidor bloquea IP), guardar URL sin canales
