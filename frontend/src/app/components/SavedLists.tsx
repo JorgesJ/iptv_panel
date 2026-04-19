@@ -35,7 +35,7 @@ export function SavedLists() {
   const [sortAsc, setSortAsc] = useState(false);
 
   // Ver/editar canales
-  const [viendoCanales, setViendoCanales] = useState<string | null>(null);
+  const [actualizando, setActualizando] = useState<string | null>(null);
   const [canales, setCanales] = useState<Canal[]>([]);
   const [loadingCanales, setLoadingCanales] = useState(false);
   const [buscarCanal, setBuscarCanal] = useState('');
@@ -103,6 +103,22 @@ export function SavedLists() {
       setError('Error al eliminar todas las listas');
     } finally {
       setEliminandoTodas(false);
+    }
+  };
+
+  const handleActualizar = async (nombre: string) => {
+    if (!confirm(`¿Re-descargar y actualizar los canales de "${nombre}"?`)) return;
+    setActualizando(nombre);
+    try {
+      const res = await fetch(`http://localhost:8000/listas/${encodeURIComponent(nombre)}/actualizar-canales`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail);
+      setListas(prev => prev.map(l => l.nombre === nombre ? { ...l, total_canales: data.total } : l));
+      if (viendoCanales === nombre) await handleVerCanales(nombre);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setActualizando(null);
     }
   };
 
@@ -470,6 +486,12 @@ export function SavedLists() {
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${viendoCanales === lista.nombre ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-purple-400 hover:bg-purple-400/10'}`}>
                       <Eye className="size-3.5" />
                       {viendoCanales === lista.nombre ? 'Ocultar' : 'Ver canales'}
+                    </button>
+                    <button onClick={() => handleActualizar(lista.nombre)} disabled={actualizando === lista.nombre}
+                      title="Re-descargar canales desde el servidor"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-yellow-400 hover:bg-yellow-400/10 transition-all disabled:opacity-40">
+                      {actualizando === lista.nombre ? <Loader2 className="size-3.5 animate-spin" /> : '🔄'}
+                      {actualizando === lista.nombre ? 'Actualizando...' : 'Actualizar'}
                     </button>
                     <button onClick={() => handleDownload(lista.nombre)} disabled={downloading === lista.nombre}
                       className="p-2 text-slate-400 hover:text-blue-400 hover:bg-blue-400/10 rounded-lg transition-all">

@@ -262,7 +262,69 @@ def get_canales_lista(nombre: str):
     return JSONResponse({"nombre": nombre, "total": len(canales), "canales": canales})
 
 
-@app.delete("/listas")
+@app.post("/listas/{nombre:path}/actualizar-canales")
+def actualizar_canales_lista(nombre: str):
+    """Re-descarga la lista desde su URL y actualiza el archivo .m3u con canales españoles."""
+    from urllib.parse import unquote
+    import unicodedata as _ud
+    import re as _re
+    nombre = unquote(nombre)
+    listas = cargar_listas()
+    lista = next((l for l in listas if l["nombre"] == nombre), None)
+    if not lista:
+        raise HTTPException(404, "Lista no encontrada")
+    url = lista.get("url", "")
+    if not url:
+        raise HTTPException(400, "La lista no tiene URL para re-descargar")
+
+    try:
+        import requests as req
+        r = req.get(url, headers={"User-Agent": "VLC/3.0.20 LibVLC/3.0.20"}, timeout=30)
+        r.raise_for_status()
+    except Exception as e:
+        raise HTTPException(400, f"No se pudo descargar la lista: {str(e)[:100]}")
+
+    todos = parsear_m3u(r.text)
+
+    def es_espanol(c):
+        n = ''.join(ch for ch in _ud.normalize('NFD', c['nombre'].upper()) if _ud.category(ch) != 'Mn')
+        e = c.get('extinf', '')
+        ei = ''.join(ch for ch in _ud.normalize('NFD', e.upper()) if _ud.category(ch) != 'Mn')
+        if n.startswith('ES:') or n.startswith('ES ') or n.startswith('ES|'): return True
+        if n.startswith('(ES)') or n.startswith('[ES]'): return True
+        if n.startswith('ESP:') or n.startswith('ESP '): return True
+        if '|ES|' in n: return True
+        if 'ESPANA' in n or 'SPAIN' in n: return True
+        if '| ES ' in n or '|ES ' in n: return True
+        if 'ESPANA' in ei or 'SPAIN' in ei: return True
+        gt = _re.search(r'group-title="([^"]*)"', e, _re.IGNORECASE)
+        if gt:
+            g = ''.join(ch for ch in _ud.normalize('NFD', gt.group(1).upper()) if _ud.category(ch) != 'Mn')
+            if 'ESPANA' in g or 'SPAIN' in g or g.startswith('ES'): return True
+        n2 = _re.sub(r'^\([^)]*\)\s*', '', n).strip()
+        if n2.startswith('M+') or n2.startswith('M.') or n2.startswith('DAZN'): return True
+        return False
+
+    canales_es = [c for c in todos if es_espanol(c)]
+    canales = canales_es if canales_es else todos
+
+    archivo = lista.get("archivo", "")
+    if not archivo:
+        archivo = os.path.join(M3U_FOLDER, f"{nombre}.m3u")
+
+    with open(archivo, "w", encoding="utf-8") as f:
+        f.write("#EXTM3U\n")
+        for c in canales:
+            f.write(c["extinf"] + "\n")
+            f.write(c["url"] + "\n")
+
+    listas = [{**l, "total_canales": len(canales)} if l["nombre"] == nombre else l for l in listas]
+    guardar_listas(listas)
+
+    return JSONResponse({"ok": True, "total": len(canales), "msg": f"Actualizados {len(canales)} canales"})
+
+
+
 def delete_todas_listas():
     listas = cargar_listas()
     for lista in listas:
