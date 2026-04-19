@@ -109,6 +109,10 @@ def tiene_espana(nombre, extinf=''):
         return True
     if n.startswith('(ES)') or n.startswith('[ES]'):
         return True
+    if n.startswith('ESP:') or n.startswith('ESP '):
+        return True
+    if '|ES|' in n:
+        return True
     if 'ESPANA' in n or 'SPAIN' in n:
         return True
     # Formato → ESPAÑA | canal ←
