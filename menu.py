@@ -745,18 +745,20 @@ async def escanear_telegram(automatico=False):
             t0 = time.time()
             resultado = None
             try:
-                async with session.head(url, timeout=aiohttp.ClientTimeout(total=5), allow_redirects=True) as r:
+                async with session.get(url, headers=HEADERS_VLC, timeout=aiohttp.ClientTimeout(total=8), allow_redirects=True) as r:
                     ping = round((time.time() - t0) * 1000)
                     if r.status in (200, 206) and ping <= MAX_PING:
-                        info = await obtener_info_cuenta(session, url)
-                        resultado = {
-                            'url': url,
-                            'ping': ping,
-                            'portal': info.get('portal', ''),
-                            'caducidad': info.get('caducidad', ''),
-                            'max_conn': info.get('max_conn', 0),
-                            'observaciones': info.get('observaciones', ''),
-                        }
+                        chunk = await r.content.read(512)
+                        if chunk and len(chunk) > 10:
+                            info = await obtener_info_cuenta(session, url)
+                            resultado = {
+                                'url': url,
+                                'ping': ping,
+                                'portal': info.get('portal', ''),
+                                'caducidad': info.get('caducidad', ''),
+                                'max_conn': info.get('max_conn', 0),
+                                'observaciones': info.get('observaciones', ''),
+                            }
             except Exception:
                 pass
             completadas_ping += 1
@@ -962,22 +964,24 @@ async def importar_txt():
             t0 = time.time()
             resultado = None
             try:
-                async with session.head(url, timeout=aiohttp.ClientTimeout(total=5), allow_redirects=True) as r:
+                # GET en lugar de HEAD — detecta servidores que bloquean acceso real
+                async with session.get(url, headers=HEADERS_VLC, timeout=aiohttp.ClientTimeout(total=8), allow_redirects=True) as r:
                     ping = round((time.time() - t0) * 1000)
                     if r.status in (200, 206) and ping <= MAX_PING:
-                        # Consultar info de cuenta (caducidad, MaxConn, estado)
-                        info = await obtener_info_cuenta(session, url)
-                        resultado = {
-                            **datos,
-                            'url': url,
-                            'ping': ping,
-                            'portal': info.get('portal', ''),
-                            'caducidad': info.get('caducidad', ''),
-                            'max_conn': info.get('max_conn', 1),
-                            'observaciones': info.get('observaciones', ''),
-                        }
-            except Exception:
-                pass
+                        # Leer solo los primeros bytes para confirmar que hay contenido
+                        chunk = await r.content.read(512)
+                        if chunk and len(chunk) > 10:
+                            # Consultar info de cuenta (caducidad, MaxConn, estado)
+                            info = await obtener_info_cuenta(session, url)
+                            resultado = {
+                                **datos,
+                                'url': url,
+                                'ping': ping,
+                                'portal': info.get('portal', ''),
+                                'caducidad': info.get('caducidad', ''),
+                                'max_conn': info.get('max_conn', 1),
+                                'observaciones': info.get('observaciones', ''),
+                            }
             except Exception:
                 pass
             completadas_ping += 1
@@ -1153,21 +1157,23 @@ async def reverificar_historial():
                 t0 = time.time()
                 resultado = None
                 try:
-                    async with session.head(url, timeout=aiohttp.ClientTimeout(total=6), allow_redirects=True) as r:
+                    async with session.get(url, headers=HEADERS_VLC, timeout=aiohttp.ClientTimeout(total=8), allow_redirects=True) as r:
                         ping = round((time.time() - t0) * 1000)
                         if r.status in (200, 206) and ping <= MAX_PING:
-                            info = await obtener_info_cuenta(session, url)
-                            resultado = {
-                                'url': url,
-                                'portal': info.get('portal', ''),
-                                'caducidad': info.get('caducidad', datos.get('caducidad', '')),
-                                'max_conn': info.get('max_conn', datos.get('max_conn', 1)),
-                                'observaciones': info.get('observaciones', ''),
-                                'ping': ping,
-                                'fecha_verificacion': datetime.now().isoformat(timespec='seconds'),
-                                'pct_streams': 0,
-                                'total_canales': 0,
-                            }
+                            chunk = await r.content.read(512)
+                            if chunk and len(chunk) > 10:
+                                info = await obtener_info_cuenta(session, url)
+                                resultado = {
+                                    'url': url,
+                                    'portal': info.get('portal', ''),
+                                    'caducidad': info.get('caducidad', datos.get('caducidad', '')),
+                                    'max_conn': info.get('max_conn', datos.get('max_conn', 1)),
+                                    'observaciones': info.get('observaciones', ''),
+                                    'ping': ping,
+                                    'fecha_verificacion': datetime.now().isoformat(timespec='seconds'),
+                                    'pct_streams': 0,
+                                    'total_canales': 0,
+                                }
                 except Exception:
                     pass
                 completadas_ping += 1
@@ -1408,19 +1414,21 @@ async def buscar_github(automatico=False):
             t0 = time.time()
             resultado = None
             try:
-                async with session.head(url, timeout=aiohttp.ClientTimeout(total=5), allow_redirects=True) as r:
+                async with session.get(url, headers=HEADERS_VLC, timeout=aiohttp.ClientTimeout(total=8), allow_redirects=True) as r:
                     ping = round((time.time() - t0) * 1000)
                     if r.status in (200, 206) and ping <= MAX_PING:
-                        info = await obtener_info_cuenta(session, url)
-                        resultado = {
-                            **datos,
-                            'url': url,
-                            'ping': ping,
-                            'portal': info.get('portal', ''),
-                            'caducidad': info.get('caducidad', ''),
-                            'max_conn': info.get('max_conn', 1),
-                            'observaciones': info.get('observaciones', ''),
-                        }
+                        chunk = await r.content.read(512)
+                        if chunk and len(chunk) > 10:
+                            info = await obtener_info_cuenta(session, url)
+                            resultado = {
+                                **datos,
+                                'url': url,
+                                'ping': ping,
+                                'portal': info.get('portal', ''),
+                                'caducidad': info.get('caducidad', ''),
+                                'max_conn': info.get('max_conn', 1),
+                                'observaciones': info.get('observaciones', ''),
+                            }
             except Exception:
                 pass
             completadas_ping += 1
