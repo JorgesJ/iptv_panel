@@ -716,6 +716,10 @@ async def escanear_telegram(automatico=False):
                             urls_conocidas.add(u)
             except Exception:
                 pass
+        # Añadir también las URLs ya verificadas (buenas o malas ya procesadas)
+        verificadas_previas = cargar_json(URLS_VERIFICADAS)
+        for v in verificadas_previas:
+            urls_conocidas.add(v.get('url', ''))
         nuevas = [d for d in todas if d['url_m3u'] not in urls_conocidas]
         ya_conocidas = len(todas) - len(nuevas)
         print(f"  📂 TXTs anteriores encontrados: {len(txts_anteriores)}")
@@ -1399,6 +1403,18 @@ async def buscar_github(automatico=False):
     unicas = list({d['url_m3u']: d for d in todas}.values())
     print(f"\n  📋 {len(unicas)} URLs únicas encontradas en GitHub")
 
+    # Filtrar URLs ya verificadas anteriormente
+    verificadas_previas = {v.get('url', '') for v in cargar_json(URLS_VERIFICADAS)}
+    unicas_filtradas = [d for d in unicas if d.get('url_m3u', '') not in verificadas_previas]
+    ya_conocidas_gh = len(unicas) - len(unicas_filtradas)
+    if ya_conocidas_gh > 0:
+        print(f"  🔄 URLs ya conocidas (se saltan): {ya_conocidas_gh}")
+        print(f"  ✨ URLs nuevas a verificar: {len(unicas_filtradas)}")
+    unicas = unicas_filtradas
+    if not unicas:
+        print("  ℹ️  No hay URLs nuevas de GitHub respecto a escaneos anteriores.")
+        return
+
     # Ping básico
     print("  ⚡ Comprobando disponibilidad básica...")
     sem = asyncio.Semaphore(20)
@@ -1719,6 +1735,18 @@ async def escanear_foro(automatico=False):
     # Deduplicar
     unicas = list({d['url_m3u']: d for d in todas}.values())
     print(f"\n  📋 {len(unicas)} URLs únicas encontradas en LinuxSat")
+
+    # Filtrar URLs ya verificadas anteriormente
+    verificadas_previas = {v.get('url', '') for v in cargar_json(URLS_VERIFICADAS)}
+    unicas_filtradas = [d for d in unicas if d.get('url_m3u', '') not in verificadas_previas]
+    ya_conocidas_foro = len(unicas) - len(unicas_filtradas)
+    if ya_conocidas_foro > 0:
+        print(f"  🔄 URLs ya conocidas (se saltan): {ya_conocidas_foro}")
+        print(f"  ✨ URLs nuevas a verificar: {len(unicas_filtradas)}")
+    unicas = unicas_filtradas
+    if not unicas:
+        print("  ℹ️  No hay URLs nuevas del foro respecto a escaneos anteriores.")
+        return
 
     # Ping básico
     print("  ⚡ Comprobando disponibilidad básica...")
