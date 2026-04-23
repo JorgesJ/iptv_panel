@@ -563,7 +563,7 @@ async def escanear_y_verificar(urls_entrada, min_canales, min_pct, acumular=Fals
 AUTO_MIN_CANALES  = 10
 AUTO_MIN_STREAMS  = 75
 AUTO_MIN_CONN     = 3
-AUTO_ACUMULAR     = True
+AUTO_ACUMULAR     = False
 
 def pedir_opciones(filtro_espana=True, automatico=False):
     if automatico:
@@ -1864,7 +1864,9 @@ async def main():
             await escanear_foro()
         elif opcion.upper() == 'T':
             print("\n  🔄 Escaneando todas las fuentes en modo automático...")
-            print(f"  ⚡ Valores: canales≥{AUTO_MIN_CANALES} | streams≥{AUTO_MIN_STREAMS}% | MaxConn≥{AUTO_MIN_CONN} | acumular=Sí")
+            print(f"  ⚡ Valores: canales≥{AUTO_MIN_CANALES} | streams≥{AUTO_MIN_STREAMS}% | MaxConn≥{AUTO_MIN_CONN}")
+            print("  🧹 Limpiando URLs verificadas anteriores...")
+            guardar_json(URLS_VERIFICADAS, [])
             await escanear_telegram(automatico=True)
             await buscar_github(automatico=True)
             await escanear_foro(automatico=True)
