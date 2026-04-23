@@ -563,7 +563,7 @@ async def escanear_y_verificar(urls_entrada, min_canales, min_pct, acumular=Fals
 AUTO_MIN_CANALES  = 10
 AUTO_MIN_STREAMS  = 75
 AUTO_MIN_CONN     = 3
-AUTO_ACUMULAR     = False
+AUTO_ACUMULAR     = True  # Acumular entre fuentes — el [T] limpia el JSON al inicio
 
 def pedir_opciones(filtro_espana=True, automatico=False):
     if automatico:
