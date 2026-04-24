@@ -262,7 +262,49 @@ def get_canales_lista(nombre: str):
     return JSONResponse({"nombre": nombre, "total": len(canales), "canales": canales})
 
 
-@app.post("/listas/{nombre:path}/actualizar-canales")
+@app.get("/listas/{nombre:path}/conexiones")
+def get_conexiones_lista(nombre: str):
+    """Consulta conexiones activas via player_api.php"""
+    from urllib.parse import unquote
+    import re as _re
+    nombre = unquote(nombre)
+    listas = cargar_listas()
+    lista = next((l for l in listas if l["nombre"] == nombre), None)
+    if not lista:
+        raise HTTPException(404, "Lista no encontrada")
+    url = lista.get("url", "")
+    if not url:
+        raise HTTPException(400, "La lista no tiene URL")
+
+    # Extraer credenciales de la URL
+    m = _re.search(r'https?://([^/]+)/get\.php\?username=([^&]+)&password=([^&]+)', url)
+    if not m:
+        raise HTTPException(400, "No se pueden extraer credenciales de la URL")
+
+    host = m.group(1)
+    username = m.group(2)
+    password = m.group(3)
+    api_url = f"http://{host}/player_api.php?username={username}&password={password}"
+
+    try:
+        import requests as req
+        r = req.get(api_url, headers={"User-Agent": "VLC/3.0.20 LibVLC/3.0.20"}, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        ui = data.get("user_info", {})
+        return JSONResponse({
+            "activas": int(ui.get("active_connections", 0)),
+            "max": int(ui.get("max_connections", 0)),
+            "status": ui.get("status", ""),
+            "caducidad": ui.get("exp_date", ""),
+            "username": username,
+            "api_url": api_url,
+        })
+    except Exception as e:
+        raise HTTPException(400, f"Error consultando API: {str(e)[:100]}")
+
+
+
 def actualizar_canales_lista(nombre: str):
     """Re-descarga la lista desde su URL y actualiza el archivo .m3u con canales españoles."""
     from urllib.parse import unquote
