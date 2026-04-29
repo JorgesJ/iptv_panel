@@ -367,6 +367,7 @@ def actualizar_canales_lista(nombre: str):
 
 
 
+@app.delete("/listas")
 def delete_todas_listas():
     listas = cargar_listas()
     for lista in listas:
