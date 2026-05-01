@@ -127,17 +127,34 @@ def aplicar_filtro(canales, filtro):
     # Sin filtro o comodín = devolver todos
     if not filtro or not filtro.strip() or filtro.strip() == '*':
         return canales
-    filtros = [normalizar(f.strip()) for f in filtro.split(',') if f.strip()]
+    # Normalizar y limpiar cada término — quitar espacios extra alrededor de : y |
+    import re as _re
+    def limpiar_termino(t):
+        t = normalizar(t.strip())
+        t = _re.sub(r'\s*:\s*', ':', t)   # "ES :" → "ES:"
+        t = _re.sub(r'\s*\|\s*', '|', t)  # "| ES |" → "|ES|"
+        return t.strip()
+
+    filtros = [limpiar_termino(f) for f in filtro.split(',') if f.strip()]
     if not filtros:
         return canales
+
     def coincide(nombre):
         n = normalizar(nombre)
+        n_limpio = _re.sub(r'\s*:\s*', ':', n)
+        n_limpio = _re.sub(r'\s*\|\s*', '|', n_limpio)
         for f in filtros:
-            if n.startswith(f):
+            if not f:
+                continue
+            if n_limpio.startswith(f):
                 return True
+            if f in n_limpio:
+                return True
+            # También buscar en nombre original normalizado sin limpiar
             if f in n:
                 return True
         return False
+
     return [c for c in canales if coincide(c["nombre"])]
 
 
